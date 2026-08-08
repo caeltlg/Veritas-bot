@@ -93,7 +93,7 @@ client.on('messageCreate', async (message) => {
         const conteudo = message.content.slice('!addproduto'.length).trim();
         const partes = conteudo.split('|').map((parte) => parte.trim());
 
-        if (partes.length < 4) {
+        if (partes.length < 3) {
             return message.reply(
                 '⚠️ **Uso correto:**\n' +
                 '`!addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]`'
@@ -108,13 +108,13 @@ client.on('messageCreate', async (message) => {
             categoria,
             nome,
             preco,
-            descricao,
+            descricao: descricao || 'Sem descrição',
             media: media || null,
-            entrega: entrega || 'Entrega pendente de envio manual do suporte.',
+            entrega: entrega || 'Entrega enviada via suporte.',
         });
 
         salvarProdutos(produtos);
-        return message.reply(`✅ Produto **${nome}** cadastrado com entrega automática!`);
+        return message.reply(`✅ Produto **${nome}** cadastrado com sucesso!`);
     }
 
     if (commandName === '!enviarproduto') {
@@ -241,22 +241,28 @@ client.on('interactionCreate', async (interaction) => {
         });
 
         const embedCarrinho = new EmbedBuilder()
-            .setTitle(`📦 Pedido — ${produto.nome}`)
+            .setTitle(`📦 Resumo do Pedido — ${produto.nome}`)
             .setColor('#00ff00')
             .setDescription(
                 `Olá ${user},\n\n` +
                 `🛒 **Produto:** ${produto.nome}\n` +
                 `💰 **Valor:** ${produto.preco}\n\n---\n` +
-                `🔑 **Chave PIX:**\n\`\`\`${obterPix()}\`\`\`\n` +
-                '📌 **Após realizar o pagamento, envie o comprovante neste chat.**\n' +
-                '⚡ *A liberação do produto é efetuada logo após a confirmação!*'
+                '📌 **Instruções:**\n' +
+                '1️⃣ Clique no botão **Gerar PIX** abaixo para obter os dados de pagamento.\n' +
+                '2️⃣ Após realizar o pagamento, envie o comprovante neste chat.\n' +
+                '3️⃣ O envio do produto é manual e será realizado dentro do prazo de até **24 horas** após a confirmação.'
             );
 
         const rowAcoes = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`aprovar_${produto.id}_${user.id}`)
-                .setLabel('Aprovar Pagamento & Entregar')
+                .setCustomId(`gerarpix_${produto.id}`)
+                .setLabel('Gerar PIX')
+                .setEmoji('💚')
                 .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`aprovar_${produto.id}_${user.id}`)
+                .setLabel('Aprovar Venda (Admin)')
+                .setStyle(ButtonStyle.Secondary),
             new ButtonBuilder()
                 .setCustomId('fechar_carrinho')
                 .setLabel('Cancelar / Fechar')
@@ -272,6 +278,24 @@ client.on('interactionCreate', async (interaction) => {
             content: `✅ Carrinho criado: ${ticketChannel}`,
             ephemeral: true,
         });
+    }
+
+    if (interaction.customId.startsWith('gerarpix_')) {
+        const pixKey = obterPix();
+        const qrCodeUrl =
+            `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixKey)}`;
+
+        const embedPix = new EmbedBuilder()
+            .setTitle('🔑 Dados para Pagamento PIX')
+            .setColor('#00ff00')
+            .setDescription(
+                'Copie a chave abaixo para realizar o pagamento no seu banco:\n\n' +
+                `\`\`\`${pixKey}\`\`\`\n` +
+                '📌 *Ou escaneie o QR Code abaixo pelo aplicativo do seu banco:*'
+            )
+            .setImage(qrCodeUrl);
+
+        return interaction.reply({ embeds: [embedPix] });
     }
 
     if (interaction.customId.startsWith('aprovar_')) {
@@ -297,7 +321,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         const embedEntrega = new EmbedBuilder()
-            .setTitle('⚡ PAGAMENTO CONFIRMADO E PRODUTO ENTREGUE!')
+            .setTitle('⚡ PAGAMENTO CONFIRMADO!')
             .setColor('#00ff00')
             .setDescription(
                 `Obrigado pela compra, <@${userId}>!\n\n` +
@@ -332,7 +356,7 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         return interaction.reply({
-            content: '✅ Pagamento aprovado, produto entregue e log de venda enviado!',
+            content: '✅ Pagamento aprovado, produto liberado e log enviado!',
             ephemeral: true,
         });
     }
