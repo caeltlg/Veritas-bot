@@ -1,0 +1,263 @@
+const { 
+    Client, 
+    GatewayIntentBits, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ChannelType, 
+    PermissionsBitField, 
+    EmbedBuilder 
+} = require('discord.js');
+
+const fs = require('fs');
+const config = require('./config.json');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+const DB_FILE = './produtos.json';
+
+function carregarProdutos() {
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2));
+        return [];
+    }
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    } catch (e) {
+        return [];
+    }
+}
+
+function salvarProdutos(lista) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2));
+}
+
+client.once('ready', () => {
+    console.log(`🤖 Bot ON como: ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
+    if (!message.guild || message.author.bot) return;
+    const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+    const args = message.content.split(' ');
+    const command = args[0].toLowerCase();
+
+    // Setar Chave PIX
+    if (command === '!setpix') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const novaPix = args[1];
+        if (!novaPix) return message.reply('⚠️ Uso: `!setpix <chave_pix>`');
+        config.chavePix = novaPix;
+        fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
+        return message.reply(`✅ Chave PIX atualizada para: \`${novaPix}\``);
+    }
+
+    // Add Produto
+    if (command === '!addproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const conteudo = message.content.slice(12).trim();
+        const partes = conteudo.split('|').map(p => p.trim());
+
+        if (partes.length < 3) {
+            return message.reply('⚠️ **Uso correto:**\n`!addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]`');
+        }
+
+        const [categoria, nome, preco, descricao, media, entrega] = partes;
+        const produtos = carregarProdutos();
+
+        const novoProduto = {
+            id: `prod_${Date.now()}`,
+            categoria,
+            nome,
+            preco,
+            descricao: descricao || 'Sem descrição',
+            media: media || null,
+            entrega: entrega || 'Entrega enviada via suporte.'
+        };
+
+        produtos.push(novoProduto);
+        salvarProdutos(produtos);
+        return message.reply(`✅ Produto **${nome}** cadastrado com sucesso!`);
+    }
+
+    // Enviar a Embed de Vendas
+    if (command === '!enviarproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const nomeOuId = message.content.slice(15).trim();
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.nome.toLowerCase() === nomeOuId.toLowerCase() || p.id === nomeOuId);
+
+        if (!prod) return message.reply('❌ Produto não encontrado!');
+
+        const topicos = prod.descricao.split(',').map(item => `⚙️ **${item.trim()}**`).join('\n');
+
+        const embedProd = new EmbedBuilder()
+            .setTitle(`🛍️ ${prod.nome}`)
+            .setColor('#00FF00')
+            .setDescription(`📄 **Descrição**\n${topicos}\n\n💰 **Preço**\n${prod.preco} | ♾️ **Estoque**\n♾️ **Infinito**`);
+
+        if (prod.media && prod.media.startsWith('http')) {
+            embedProd.setImage(prod.media);
+        }
+
+        const btnComprar = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`buy_${prod.id}`)
+                .setLabel('Comprar')
+                .setEmoji('🛒')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await message.channel.send({ embeds: [embedProd], components: [btnComprar] });
+        if (message.deletable) message.delete();
+    }
+
+    // Listar
+    if (command === '!listarprodutos') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const produtos = carregarProdutos();
+        if (produtos.length === 0) return message.reply('📦 Nenhum produto cadastrado.');
+
+        let lista = '📋 **PRODUTOS CADASTRADOS:**\n\n';
+        produtos.forEach((p, i) => {
+            lista += `**${i + 1}. ${p.nome}** — ${p.preco}\n📦 Entrega: \`${p.entrega}\`\n---\n`;
+        });
+        return message.reply(lista);
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    // Criar Carrinho
+    if (interaction.customId.startsWith('buy_')) {
+        const prodId = interaction.customId.replace('buy_', '');
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.id === prodId);
+
+        if (!prod) return interaction.reply({ content: '❌ Produto indisponível.', ephemeral: true });
+
+        const guild = interaction.guild;
+        const user = interaction.user;
+
+        const canalExistente = guild.channels.cache.find(c => c.name === `carrinho-${user.username.toLowerCase()}`);
+        if (canalExistente) {
+            return interaction.reply({ content: `Você já tem um carrinho aberto em: ${canalExistente}`, ephemeral: true });
+        }
+
+        const ticketChannel = await guild.channels.create({
+            name: `carrinho-${user.username}`,
+            type: ChannelType.GuildText,
+            permissionOverwrites: [
+                { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+            ],
+        });
+
+        const embedCarrinho = new EmbedBuilder()
+            .setTitle(`📦 Resumo do Pedido — ${prod.nome}`)
+            .setColor('#00FF00')
+            .setDescription(`Olá ${user},\n\n🛒 **Produto:** ${prod.nome}\n💰 **Valor:** ${prod.preco}\n\n---\n📌 **Instruções:**\n1️⃣ Clique no botão **Gerar PIX** abaixo para obter os dados de pagamento.\n2️⃣ Após realizar o pagamento, envie o comprovante neste chat.\n3️⃣ O envio do produto é manual e será realizado dentro do prazo de até **24 horas**.`);
+
+        const rowAcoes = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`gerarpix_${prod.id}`)
+                .setLabel('Gerar PIX')
+                .setEmoji('💚')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId(`aprovar_${prod.id}_${user.id}`)
+                .setLabel('Aprovar Venda (Admin)')
+                .setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder()
+                .setCustomId('fechar_carrinho')
+                .setLabel('Cancelar / Fechar')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await ticketChannel.send({ embeds: [embedCarrinho], components: [rowAcoes] });
+        await interaction.reply({ content: `✅ Carrinho criado: ${ticketChannel}`, ephemeral: true });
+    }
+
+    // Botão Gerar PIX
+    if (interaction.customId.startsWith('gerarpix_')) {
+        const pixKey = config.chavePix || process.env.PIX_KEY || 'Chave PIX não configurada';
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixKey)}`;
+
+        const embedPix = new EmbedBuilder()
+            .setTitle('🔑 Dados para Pagamento PIX')
+            .setColor('#00FF00')
+            .setDescription(`Copie a chave abaixo para realizar o pagamento no seu banco:\n\n\`\`\`${pixKey}\`\`\`\n📌 *Ou escaneie o QR Code abaixo pelo aplicativo do seu banco:*`)
+            .setImage(qrCodeUrl);
+
+        await interaction.reply({ embeds: [embedPix] });
+    }
+
+    // Botão de Aprovação (Admin)
+    if (interaction.customId.startsWith('aprovar_')) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: '❌ Apenas administradores podem aprovar o pagamento!', ephemeral: true });
+        }
+
+        const [, prodId, userId] = interaction.customId.split('_');
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.id === prodId);
+
+        if (!prod) return interaction.reply({ content: '❌ Erro ao localizar o produto.', ephemeral: true });
+
+        const targetUser = await interaction.guild.members.fetch(userId).catch(() => null);
+
+        // 1. Envia a entrega no PV (DM) do usuário de forma limpa e com aviso importante
+        if (targetUser) {
+            try {
+                const embedDm = new EmbedBuilder()
+                    .setTitle('⚡ SEU PRODUTO CHEGOU!')
+                    .setColor('#00FF00')
+                    .setDescription(`Obrigado pela compra de **${prod.nome}**!\n\n📦 **Conteúdo / Acesso:**\n${prod.entrega}\n\n⚠️ **AVISO IMPORTANTE:** Este acesso é pessoal e intransferível. **Não compartilhe com ninguém**, sob risco de banimento!\n\n💬 Por favor, deixe seu feedback no canal: https://discord.com/channels/1486059652755095744/1508530961753575535`);
+                
+                await targetUser.send({ embeds: [embedDm] });
+            } catch (err) {
+                console.log('Não foi possível enviar DM para o usuário.');
+            }
+        }
+
+        // 2. Mensagem de confirmação no canal do carrinho
+        const embedEntregaCarrinho = new EmbedBuilder()
+            .setTitle('⚡ PAGAMENTO APROVADO!')
+            .setColor('#00FF00')
+            .setDescription(`Obrigado pela compra, <@${userId}>!\n\n✅ O produto foi enviado diretamente para o seu **PV (Mensagem Direta)** com o aviso de segurança.\n\n💬 **Não se esqueça de enviar seu feedback em:**\nhttps://discord.com/channels/1486059652755095744/1508530961753575535\n\n*Este carrinho será fechado em breve.*`);
+
+        await interaction.channel.send({ content: `<@${userId}>`, embeds: [embedEntregaCarrinho] });
+
+        // 3. Log de venda
+        const logChannel = interaction.guild.channels.cache.find(c => c.name.includes('vendas') || c.name.includes('compras') || c.name.includes('logs'));
+
+        if (logChannel) {
+            const embedLog = new EmbedBuilder()
+                .setTitle('📦 Venda Confirmada')
+                .setColor('#00FF00')
+                .setDescription(`👤 **Usuário:** <@${userId}>\n🛒 **Produto:** ${prod.nome}\n💰 **Valor:** ${prod.preco}\n⚙️ **Modalidade:** PIX`);
+
+            await logChannel.send({ embeds: [embedLog] });
+        }
+
+        await interaction.reply({ content: '✅ Pagamento aprovado, produto enviado na DM e log registrado!', ephemeral: true });
+        
+        // Fecha o carrinho automaticamente após 10 segundos
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 10000);
+    }
+
+    // Fechar carrinho
+    if (interaction.customId === 'fechar_carrinho') {
+        await interaction.reply('🔒 Fechando carrinho em 5 segundos...');
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN || config.token);

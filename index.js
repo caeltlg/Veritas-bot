@@ -320,18 +320,46 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        const embedEntrega = new EmbedBuilder()
-            .setTitle('⚡ PAGAMENTO CONFIRMADO!')
-            .setColor('#00ff00')
-            .setDescription(
-                `Obrigado pela compra, <@${userId}>!\n\n` +
-                `📦 **Seu Produto:**\n\`\`\`${produto.entrega}\`\`\`\n` +
-                '*Guarde essas informações com segurança!*'
-            );
+        const targetUser = await client.users.fetch(userId).catch(() => null);
+        let enviadoPorDm = false;
+
+        if (targetUser) {
+            try {
+                const embedDm = new EmbedBuilder()
+                    .setTitle('⚡ SEU PRODUTO CHEGOU!')
+                    .setColor('#00ff00')
+                    .setDescription(
+                        `Obrigado pela compra de **${produto.nome}**!\n\n` +
+                        `📦 **Conteúdo / Acesso:**\n${produto.entrega}\n\n` +
+                        '⚠️ **AVISO IMPORTANTE:** Este acesso é pessoal e intransferível. ' +
+                        '**Não compartilhe com ninguém**, sob risco de banimento!\n\n' +
+                        '💬 Por favor, deixe seu feedback no canal: ' +
+                        'https://discord.com/channels/1486059652755095744/1508530961753575535'
+                    );
+
+                await targetUser.send({ embeds: [embedDm] });
+                enviadoPorDm = true;
+            } catch {
+                // O usuário pode ter mensagens diretas bloqueadas.
+            }
+        }
 
         await interaction.channel.send({
             content: `<@${userId}>`,
-            embeds: [embedEntrega],
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle('⚡ PAGAMENTO APROVADO!')
+                    .setColor('#00ff00')
+                    .setDescription(
+                        `Obrigado pela compra, <@${userId}>!\n\n` +
+                        (enviadoPorDm
+                            ? '✅ O produto foi enviado diretamente para o seu **PV (Mensagem Direta)** com o aviso de segurança.\n\n'
+                            : '⚠️ Não foi possível enviar uma mensagem direta. Verifique suas configurações de privacidade e fale com o suporte.\n\n') +
+                        '💬 **Não se esqueça de enviar seu feedback em:**\n' +
+                        'https://discord.com/channels/1486059652755095744/1508530961753575535\n\n' +
+                        '*Este carrinho será fechado em breve.*'
+                    ),
+            ],
         });
 
         const logChannel = interaction.guild?.channels.cache.find(
@@ -355,10 +383,16 @@ client.on('interactionCreate', async (interaction) => {
             await logChannel.send({ embeds: [embedLog] });
         }
 
-        return interaction.reply({
-            content: '✅ Pagamento aprovado, produto liberado e log enviado!',
+        await interaction.reply({
+            content: enviadoPorDm
+                ? '✅ Pagamento aprovado, produto enviado na DM e log registrado!'
+                : '⚠️ Pagamento aprovado, mas não foi possível enviar a DM. O log foi registrado.',
             ephemeral: true,
         });
+
+        setTimeout(() => {
+            interaction.channel?.delete().catch(() => {});
+        }, 10000);
     }
 
     if (interaction.customId === 'fechar_carrinho') {
