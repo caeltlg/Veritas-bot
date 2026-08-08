@@ -11,6 +11,14 @@ const {
 const fs = require('fs');
 const config = require('./config.json');
 
+process.on('unhandledRejection', (error) => {
+    if (error?.code === 10062 || error?.rawError?.code === 10062) {
+        return;
+    }
+
+    console.error('Erro assíncrono não tratado:', error);
+});
+
 const discordToken = process.env.DISCORD_TOKEN || config.token;
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
@@ -115,6 +123,34 @@ client.on('messageCreate', async (message) => {
 
         salvarProdutos(produtos);
         return message.reply(`✅ Produto **${nome}** cadastrado com sucesso!`);
+    }
+
+    if (commandName === '!delproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+
+        const nomeOuId = message.content.slice('!delproduto'.length).trim();
+        if (!nomeOuId) {
+            return message.reply('⚠️ Uso: `!delproduto <nome ou ID do produto>`');
+        }
+
+        const produtos = carregarProdutos();
+        const produtoRemovido = produtos.find(
+            (item) =>
+                item.id === nomeOuId ||
+                item.nome.toLowerCase() === nomeOuId.toLowerCase()
+        );
+
+        if (!produtoRemovido) {
+            return message.reply('❌ Produto não encontrado. Use o nome exato ou o ID.');
+        }
+
+        salvarProdutos(
+            produtos.filter((item) => item.id !== produtoRemovido.id)
+        );
+
+        return message.reply(
+            `🗑️ Produto **${produtoRemovido.nome}** removido com sucesso!`
+        );
     }
 
     if (commandName === '!enviarproduto') {
