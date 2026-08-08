@@ -1,0 +1,228 @@
+Substitua todo o conteúdo do index.js por este novo código completo com design verde neon, log de vendas simplificado e sistema de entrega automática ao aprovar a compra:
+
+const { 
+    Client, 
+    GatewayIntentBits, 
+    ActionRowBuilder, 
+    ButtonBuilder, 
+    ButtonStyle, 
+    ChannelType, 
+    PermissionsBitField, 
+    EmbedBuilder 
+} = require('discord.js');
+
+const fs = require('fs');
+const config = require('./config.json');
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent
+    ]
+});
+
+const DB_FILE = './produtos.json';
+
+function carregarProdutos() {
+    if (!fs.existsSync(DB_FILE)) {
+        fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2));
+        return [];
+    }
+    try {
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+    } catch (e) {
+        return [];
+    }
+}
+
+function salvarProdutos(lista) {
+    fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2));
+}
+
+client.once('ready', () => {
+    console.log(`🤖 Bot ON como: ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
+    if (!message.guild || message.author.bot) return;
+    const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator);
+    const args = message.content.split(' ');
+    const command = args[0].toLowerCase();
+
+    // Setar Chave PIX
+    if (command === '!setpix') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const novaPix = args[1];
+        if (!novaPix) return message.reply('⚠️ Uso: `!setpix <chave_pix>`');
+        config.chavePix = novaPix;
+        fs.writeFileSync('./config.json', JSON.stringify(config, null, 2));
+        return message.reply(`✅ Chave PIX atualizada para: \`${novaPix}\``);
+    }
+
+    // Add Produto com Entrega Automática
+    if (command === '!addproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const conteudo = message.content.slice(12).trim();
+        const partes = conteudo.split('|').map(p => p.trim());
+
+        if (partes.length < 4) {
+            return message.reply('⚠️ **Uso correto:**\n`!addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]`');
+        }
+
+        const [categoria, nome, preco, descricao, media, entrega] = partes;
+        const produtos = carregarProdutos();
+
+        const novoProduto = {
+            id: `prod_${Date.now()}`,
+            categoria,
+            nome,
+            preco,
+            descricao,
+            media: media || null,
+            entrega: entrega || 'Entrega pendente de envio manual do suporte.'
+        };
+
+        produtos.push(novoProduto);
+        salvarProdutos(produtos);
+        return message.reply(`✅ Produto **${nome}** cadastrado com entrega automática!`);
+    }
+
+    // Enviar a Embed de Vendas Verde Neon
+    if (command === '!enviarproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const nomeOuId = message.content.slice(15).trim();
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.nome.toLowerCase() === nomeOuId.toLowerCase() || p.id === nomeOuId);
+
+        if (!prod) return message.reply('❌ Produto não encontrado!');
+
+        const topicos = prod.descricao.split(',').map(item => `⚙️ **${item.trim()}**`).join('\n');
+
+        const embedProd = new EmbedBuilder()
+            .setTitle(`🛍️ ${prod.nome}`)
+            .setColor('#00FF00')
+            .setDescription(`📄 **Descrição**\n${topicos}\n\n💰 **Preço**\n${prod.preco} | ♾️ **Estoque**\n♾️ **Infinito**`);
+
+        if (prod.media && prod.media.startsWith('http')) {
+            embedProd.setImage(prod.media);
+        }
+
+        const btnComprar = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`buy_${prod.id}`)
+                .setLabel('Comprar')
+                .setEmoji('🛒')
+                .setStyle(ButtonStyle.Success)
+        );
+
+        await message.channel.send({ embeds: [embedProd], components: [btnComprar] });
+        if (message.deletable) message.delete();
+    }
+
+    // Listar
+    if (command === '!listarprodutos') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+        const produtos = carregarProdutos();
+        if (produtos.length === 0) return message.reply('📦 Nenhum produto cadastrado.');
+
+        let lista = '📋 **PRODUTOS CADASTRADOS:**\n\n';
+        produtos.forEach((p, i) => {
+            lista += `**${i + 1}. ${p.nome}** — ${p.preco}\n📦 Entrega: \`${p.entrega}\`\n---\n`;
+        });
+        return message.reply(lista);
+    }
+});
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isButton()) return;
+
+    if (interaction.customId.startsWith('buy_')) {
+        const prodId = interaction.customId.replace('buy_', '');
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.id === prodId);
+
+        if (!prod) return interaction.reply({ content: '❌ Produto indisponível.', ephemeral: true });
+
+        const guild = interaction.guild;
+        const user = interaction.user;
+
+        const canalExistente = guild.channels.cache.find(c => c.name === `carrinho-${user.username.toLowerCase()}`);
+        if (canalExistente) {
+            return interaction.reply({ content: `Você já tem um carrinho aberto em: ${canalExistente}`, ephemeral: true });
+        }
+
+        const ticketChannel = await guild.channels.create({
+            name: `carrinho-${user.username}`,
+            type: ChannelType.GuildText,
+            permissionOverwrites: [
+                { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] },
+            ],
+        });
+
+        const pixKey = config.chavePix || process.env.PIX_KEY || 'Chave PIX Não Configurada';
+
+        const embedCarrinho = new EmbedBuilder()
+            .setTitle(`📦 Pedido — ${prod.nome}`)
+            .setColor('#00FF00')
+            .setDescription(`Olá ${user},\n\n🛒 **Produto:** ${prod.nome}\n💰 **Valor:** ${prod.preco}\n\n---\n🔑 **Chave PIX:**\n\`\`\`${pixKey}\`\`\`\n📌 **Após realizar o pagamento, envie o comprovante neste chat.**\n⚡ *A liberação do produto é efetuada logo após a confirmação!*`);
+
+        const rowAcoes = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`aprovar_${prod.id}_${user.id}`)
+                .setLabel('Aprovar Pagamento & Entregar')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('fechar_carrinho')
+                .setLabel('Cancelar / Fechar')
+                .setStyle(ButtonStyle.Danger)
+        );
+
+        await ticketChannel.send({ embeds: [embedCarrinho], components: [rowAcoes] });
+        await interaction.reply({ content: `✅ Carrinho criado: ${ticketChannel}`, ephemeral: true });
+    }
+
+    // Botão de Aprovação e Entrega Automática
+    if (interaction.customId.startsWith('aprovar_')) {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({ content: '❌ Apenas administradores podem aprovar o pagamento!', ephemeral: true });
+        }
+
+        const [, prodId, userId] = interaction.customId.split('_');
+        const produtos = carregarProdutos();
+        const prod = produtos.find(p => p.id === prodId);
+        const comprandoUser = await client.users.fetch(userId).catch(() => null);
+
+        if (!prod) return interaction.reply({ content: '❌ Erro ao localizar o produto.', ephemeral: true });
+
+        // 1. Enviar mensagem de entrega no carrinho
+        const embedEntrega = new EmbedBuilder()
+            .setTitle('⚡ PAGAMENTO CONFIRMADO E PRODUTO ENTREGUE!')
+            .setColor('#00FF00')
+            .setDescription(`Obrigado pela compra, <@${userId}>!\n\n📦 **Seu Produto:**\n\`\`\`${prod.entrega}\`\`\`\n*Guarde essas informações com segurança!*`);
+
+        await interaction.channel.send({ content: `<@${userId}>`, embeds: [embedEntrega] });
+
+        // 2. Enviar Log Limpo no canal de compras/vendas
+        const logChannel = interaction.guild.channels.cache.find(c => c.name.includes('vendas') || c.name.includes('compras') || c.name.includes('logs'));
+
+        if (logChannel) {
+            const embedLog = new EmbedBuilder()
+                .setTitle('📦 Venda Confirmada')
+                .setColor('#00FF00')
+                .setDescription(`👤 **Usuário:** <@${userId}>\n🛒 **Produto:** ${prod.nome}\n💰 **Valor:** ${prod.preco}\n⚙️ **Modalidade:** PIX`);
+
+            await logChannel.send({ embeds: [embedLog] });
+        }
+
+        await interaction.reply({ content: '✅ Pagamento aprovado, produto entregue e log de venda enviado!', ephemeral: true });
+    }
+
+    if (interaction.customId === 'fechar_carrinho') {
+        await interaction.reply('🔒 Fechando carrinho em 5 segundos...');
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 5000);
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN || config.token);

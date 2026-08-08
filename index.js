@@ -4,7 +4,6 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    StringSelectMenuBuilder,
     ChannelType,
     PermissionsBitField,
     EmbedBuilder,
@@ -13,18 +12,9 @@ const fs = require('fs');
 const config = require('./config.json');
 
 const discordToken = process.env.DISCORD_TOKEN || config.token;
-const pixKey = process.env.PIX_KEY || (
-    config.chavePix && config.chavePix !== 'SUA_CHAVE_PIX_AQUI'
-        ? config.chavePix
-        : null
-);
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
-}
-
-if (!pixKey) {
-    throw new Error('PIX_KEY não configurado.');
 }
 
 const client = new Client({
@@ -39,20 +29,28 @@ const DB_FILE = './produtos.json';
 
 function carregarProdutos() {
     if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, '[]\n');
+        fs.writeFileSync(DB_FILE, `${JSON.stringify([], null, 2)}\n`);
         return [];
     }
 
     try {
-        const dados = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
-        return Array.isArray(dados) ? dados : [];
+        const produtos = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+        return Array.isArray(produtos) ? produtos : [];
     } catch {
         return [];
     }
 }
 
 function salvarProdutos(lista) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2) + '\n');
+    fs.writeFileSync(DB_FILE, `${JSON.stringify(lista, null, 2)}\n`);
+}
+
+function obterPix() {
+    return process.env.PIX_KEY || (
+        config.chavePix && config.chavePix !== 'SUA_CHAVE_PIX_AQUI'
+            ? config.chavePix
+            : 'Chave PIX não configurada'
+    );
 }
 
 function nomeDoCarrinho(user) {
@@ -63,10 +61,8 @@ function eImagem(url) {
     return /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
 }
 
-const selecoesUsuario = new Map();
-
 client.once('ready', () => {
-    console.log(`🤖 Bot da Anbu ON como: ${client.user.tag}`);
+    console.log(`🤖 Bot ON como: ${client.user.tag}`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -76,176 +72,140 @@ client.on('messageCreate', async (message) => {
         PermissionsBitField.Flags.Administrator
     );
     const [command] = message.content.trim().split(/\s+/);
-    const comando = command?.toLowerCase();
+    const commandName = command?.toLowerCase();
 
-    if (comando === '!setpix') {
-        if (!isAdmin) {
-            return message.reply('❌ Apenas administradores podem alterar a chave PIX!');
-        }
+    if (commandName === '!setpix') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
         const novaPix = message.content.slice('!setpix'.length).trim();
         if (!novaPix) {
-            return message.reply('⚠️ Uso correto: `!setpix <sua_chave_pix>`');
+            return message.reply('⚠️ Uso: `!setpix <chave_pix>`');
         }
 
         config.chavePix = novaPix;
-        fs.writeFileSync('./config.json', JSON.stringify(config, null, 2) + '\n');
+        fs.writeFileSync('./config.json', `${JSON.stringify(config, null, 2)}\n`);
         return message.reply('✅ Chave PIX atualizada com sucesso.');
     }
 
-    if (comando === '!addproduto') {
-        if (!isAdmin) {
-            return message.reply('❌ Apenas administradores podem cadastrar produtos!');
-        }
+    if (commandName === '!addproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
         const conteudo = message.content.slice('!addproduto'.length).trim();
         const partes = conteudo.split('|').map((parte) => parte.trim());
 
         if (partes.length < 4) {
             return message.reply(
-                '⚠️ Uso correto:\n' +
-                '`!addproduto Categoria | Nome | Preço | Descrição | [LinkDoVideo/Imagem]`\n\n' +
-                'Exemplo:\n' +
-                '`!addproduto VIP | Painel Red | R$ 30,00 | Melhor auxílio sem ban | https://exemplo.com/video.mp4`'
+                '⚠️ **Uso correto:**\n' +
+                '`!addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]`'
             );
         }
 
-        const [categoria, nome, preco, descricao, media] = partes;
+        const [categoria, nome, preco, descricao, media, entrega] = partes;
         const produtos = carregarProdutos();
-        const novoProduto = {
+
+        produtos.push({
             id: `prod_${Date.now()}`,
             categoria,
             nome,
             preco,
             descricao,
             media: media || null,
-        };
-
-        produtos.push(novoProduto);
-        salvarProdutos(produtos);
-        return message.reply(
-            `✅ Produto **${nome}** (Categoria: **${categoria}**) cadastrado com sucesso!`
-        );
-    }
-
-    if (comando === '!delproduto') {
-        if (!isAdmin) {
-            return message.reply('❌ Apenas administradores podem deletar produtos!');
-        }
-
-        const nomeOuId = message.content.slice('!delproduto'.length).trim();
-        let produtos = carregarProdutos();
-        const tamanhoInicial = produtos.length;
-
-        produtos = produtos.filter(
-            (produto) =>
-                produto.nome.toLowerCase() !== nomeOuId.toLowerCase() &&
-                produto.id !== nomeOuId
-        );
-
-        if (produtos.length === tamanhoInicial) {
-            return message.reply('❌ Produto não encontrado. Digite o nome exato ou o ID.');
-        }
+            entrega: entrega || 'Entrega pendente de envio manual do suporte.',
+        });
 
         salvarProdutos(produtos);
-        return message.reply('🗑️ Produto removido com sucesso!');
+        return message.reply(`✅ Produto **${nome}** cadastrado com entrega automática!`);
     }
 
-    if (comando === '!listarprodutos') {
-        if (!isAdmin) {
-            return message.reply('❌ Apenas administradores podem ver a lista interna!');
-        }
+    if (commandName === '!enviarproduto') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
+        const nomeOuId = message.content.slice('!enviarproduto'.length).trim();
         const produtos = carregarProdutos();
-        if (produtos.length === 0) {
-            return message.reply('📦 Nenhum produto cadastrado até o momento.');
-        }
-
-        const lista = produtos.map((produto, index) =>
-            `**${index + 1}. [${produto.categoria}] ${produto.nome}** — ${produto.preco}\n` +
-            `📝 Descrição: ${produto.descricao}\n` +
-            `🎥 Mídia: ${produto.media || 'Nenhuma'}\n---`
+        const produto = produtos.find(
+            (item) =>
+                item.nome.toLowerCase() === nomeOuId.toLowerCase() ||
+                item.id === nomeOuId
         );
 
-        return message.reply(`📋 **PRODUTOS CADASTRADOS**\n\n${lista.join('\n')}`);
-    }
+        if (!produto) return message.reply('❌ Produto não encontrado!');
 
-    if (comando === '!painelvendas') {
-        if (!isAdmin) {
-            return message.reply('❌ Apenas administradores podem enviar o painel!');
-        }
+        const topicos = produto.descricao
+            .split(',')
+            .map((item) => `⚙️ **${item.trim()}**`)
+            .join('\n');
 
-        const produtos = carregarProdutos();
-        if (produtos.length === 0) {
-            return message.reply(
-                '⚠️ Cadastre pelo menos um produto com `!addproduto` antes de enviar o painel de vendas!'
-            );
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle('🛒 ANBU SHOP — CENTRAL DE VENDAS')
-            .setDescription('Selecione abaixo o produto que deseja adquirir para abrir o seu carrinho!')
-            .setColor('#2b2d31')
-            .setFooter({ text: 'Atendimento automático & entrega rápida.' });
-
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('selecionar_produto')
-            .setPlaceholder('📦 Escolha o produto no menu...')
-            .addOptions(
-                produtos.slice(0, 25).map((produto) => ({
-                    label: `[${produto.categoria}] ${produto.nome}`.slice(0, 100),
-                    description: `${produto.preco} — ${produto.descricao}`.slice(0, 100),
-                    value: produto.id,
-                }))
+        const embedProduto = new EmbedBuilder()
+            .setTitle(`🛍️ ${produto.nome}`)
+            .setColor('#00ff00')
+            .setDescription(
+                `📄 **Descrição**\n${topicos}\n\n` +
+                `💰 **Preço**\n${produto.preco} | ♾️ **Estoque**\n♾️ **Infinito**`
             );
 
-        const rowMenu = new ActionRowBuilder().addComponents(selectMenu);
-        const rowBotao = new ActionRowBuilder().addComponents(
+        if (produto.media && eImagem(produto.media)) {
+            embedProduto.setImage(produto.media);
+        }
+
+        const botaoComprar = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId('abrir_carrinho')
-                .setLabel('🛒 Abrir Carrinho / Comprar')
+                .setCustomId(`buy_${produto.id}`)
+                .setLabel('Comprar')
+                .setEmoji('🛒')
                 .setStyle(ButtonStyle.Success)
         );
 
-        return message.channel.send({
-            embeds: [embed],
-            components: [rowMenu, rowBotao],
+        await message.channel.send({
+            embeds: [embedProduto],
+            components: [botaoComprar],
         });
+
+        if (message.deletable) {
+            await message.delete().catch(() => {});
+        }
+    }
+
+    if (commandName === '!listarprodutos') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+
+        const produtos = carregarProdutos();
+        if (produtos.length === 0) {
+            return message.reply('📦 Nenhum produto cadastrado.');
+        }
+
+        const lista = produtos
+            .map(
+                (produto, index) =>
+                    `**${index + 1}. ${produto.nome}** — ${produto.preco}\n` +
+                    `📦 Entrega: \`${produto.entrega}\`\n---`
+            )
+            .join('\n');
+
+        return message.reply(`📋 **PRODUTOS CADASTRADOS:**\n\n${lista}`);
     }
 });
 
 client.on('interactionCreate', async (interaction) => {
-    const produtos = carregarProdutos();
+    if (!interaction.isButton()) return;
 
-    if (interaction.isStringSelectMenu() && interaction.customId === 'selecionar_produto') {
-        const produtoSelecionado = produtos.find(
-            (produto) => produto.id === interaction.values[0]
-        );
+    if (interaction.customId.startsWith('buy_')) {
+        const produtoId = interaction.customId.slice('buy_'.length);
+        const produtos = carregarProdutos();
+        const produto = produtos.find((item) => item.id === produtoId);
 
-        if (!produtoSelecionado) {
+        if (!produto) {
             return interaction.reply({
-                content: '❌ Produto não encontrado.',
+                content: '❌ Produto indisponível.',
                 ephemeral: true,
             });
         }
 
-        selecoesUsuario.set(interaction.user.id, produtoSelecionado);
-        return interaction.reply({
-            content:
-                `✅ Você selecionou: **${produtoSelecionado.nome}** (${produtoSelecionado.preco}). ` +
-                'Clique no botão **"Abrir Carrinho / Comprar"** para gerar seu pedido!',
-            ephemeral: true,
-        });
-    }
-
-    if (interaction.isButton() && interaction.customId === 'abrir_carrinho') {
         const guild = interaction.guild;
         const user = interaction.user;
-        const produto = selecoesUsuario.get(user.id);
 
-        if (!guild || !produto) {
+        if (!guild) {
             return interaction.reply({
-                content: '⚠️ Selecione um produto no menu suspenso primeiro!',
+                content: '❌ Esta ação só pode ser usada dentro de um servidor.',
                 ephemeral: true,
             });
         }
@@ -257,7 +217,7 @@ client.on('interactionCreate', async (interaction) => {
 
         if (canalExistente) {
             return interaction.reply({
-                content: `Você já possui um carrinho aberto em: ${canalExistente}`,
+                content: `Você já tem um carrinho aberto em: ${canalExistente}`,
                 ephemeral: true,
             });
         }
@@ -280,48 +240,104 @@ client.on('interactionCreate', async (interaction) => {
             ],
         });
 
-        const embedPix = new EmbedBuilder()
-            .setTitle(`🛒 SEU CARRINHO — ${produto.nome}`)
+        const embedCarrinho = new EmbedBuilder()
+            .setTitle(`📦 Pedido — ${produto.nome}`)
+            .setColor('#00ff00')
             .setDescription(
-                `Olá ${user}, confira os detalhes do seu pedido:\n\n` +
-                `📂 **Categoria:** ${produto.categoria}\n` +
-                `📦 **Produto:** ${produto.nome}\n` +
-                `💰 **Valor:** ${produto.preco}\n` +
-                `📝 **Descrição:** ${produto.descricao}\n\n---\n` +
-                `🔑 **Chave PIX:** \`${pixKey}\`\n` +
-                `👤 **Titular:** ${config.donoNome || 'Anbu Shop'}\n\n` +
-                '📌 Envie o comprovante do PIX neste chat para liberação do pedido!'
-            )
-            .setColor('#00ff7f');
+                `Olá ${user},\n\n` +
+                `🛒 **Produto:** ${produto.nome}\n` +
+                `💰 **Valor:** ${produto.preco}\n\n---\n` +
+                `🔑 **Chave PIX:**\n\`\`\`${obterPix()}\`\`\`\n` +
+                '📌 **Após realizar o pagamento, envie o comprovante neste chat.**\n' +
+                '⚡ *A liberação do produto é efetuada logo após a confirmação!*'
+            );
 
-        if (produto.media && eImagem(produto.media)) {
-            embedPix.setImage(produto.media);
-        }
-
-        const rowFechar = new ActionRowBuilder().addComponents(
+        const rowAcoes = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`aprovar_${produto.id}_${user.id}`)
+                .setLabel('Aprovar Pagamento & Entregar')
+                .setStyle(ButtonStyle.Success),
             new ButtonBuilder()
                 .setCustomId('fechar_carrinho')
-                .setLabel('🔒 Fechar Carrinho (Apenas Admins)')
+                .setLabel('Cancelar / Fechar')
                 .setStyle(ButtonStyle.Danger)
         );
 
-        const mediaMensagem = produto.media
-            ? `\n🎥 Mídia do Produto: ${produto.media}`
-            : '';
-
         await ticketChannel.send({
-            content: `${user}${mediaMensagem}`,
-            embeds: [embedPix],
-            components: [rowFechar],
+            embeds: [embedCarrinho],
+            components: [rowAcoes],
         });
 
         return interaction.reply({
-            content: `Carrinho criado em: ${ticketChannel}`,
+            content: `✅ Carrinho criado: ${ticketChannel}`,
             ephemeral: true,
         });
     }
 
-    if (interaction.isButton() && interaction.customId === 'fechar_carrinho') {
+    if (interaction.customId.startsWith('aprovar_')) {
+        if (!interaction.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return interaction.reply({
+                content: '❌ Apenas administradores podem aprovar o pagamento!',
+                ephemeral: true,
+            });
+        }
+
+        const payload = interaction.customId.slice('aprovar_'.length);
+        const separatorIndex = payload.lastIndexOf('_');
+        const produtoId = payload.slice(0, separatorIndex);
+        const userId = payload.slice(separatorIndex + 1);
+        const produtos = carregarProdutos();
+        const produto = produtos.find((item) => item.id === produtoId);
+
+        if (!produto) {
+            return interaction.reply({
+                content: '❌ Erro ao localizar o produto.',
+                ephemeral: true,
+            });
+        }
+
+        const embedEntrega = new EmbedBuilder()
+            .setTitle('⚡ PAGAMENTO CONFIRMADO E PRODUTO ENTREGUE!')
+            .setColor('#00ff00')
+            .setDescription(
+                `Obrigado pela compra, <@${userId}>!\n\n` +
+                `📦 **Seu Produto:**\n\`\`\`${produto.entrega}\`\`\`\n` +
+                '*Guarde essas informações com segurança!*'
+            );
+
+        await interaction.channel.send({
+            content: `<@${userId}>`,
+            embeds: [embedEntrega],
+        });
+
+        const logChannel = interaction.guild?.channels.cache.find(
+            (canal) =>
+                canal.name.includes('vendas') ||
+                canal.name.includes('compras') ||
+                canal.name.includes('logs')
+        );
+
+        if (logChannel?.isTextBased()) {
+            const embedLog = new EmbedBuilder()
+                .setTitle('📦 Venda Confirmada')
+                .setColor('#00ff00')
+                .setDescription(
+                    `👤 **Usuário:** <@${userId}>\n` +
+                    `🛒 **Produto:** ${produto.nome}\n` +
+                    `💰 **Valor:** ${produto.preco}\n` +
+                    '⚙️ **Modalidade:** PIX'
+                );
+
+            await logChannel.send({ embeds: [embedLog] });
+        }
+
+        return interaction.reply({
+            content: '✅ Pagamento aprovado, produto entregue e log de venda enviado!',
+            ephemeral: true,
+        });
+    }
+
+    if (interaction.customId === 'fechar_carrinho') {
         if (!interaction.member?.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return interaction.reply({
                 content: '❌ Apenas administradores podem fechar este carrinho!',
@@ -329,7 +345,7 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
-        await interaction.reply('🔒 Este carrinho será fechado em 5 segundos...');
+        await interaction.reply('🔒 Fechando carrinho em 5 segundos...');
         setTimeout(() => {
             interaction.channel?.delete().catch(() => {});
         }, 5000);
