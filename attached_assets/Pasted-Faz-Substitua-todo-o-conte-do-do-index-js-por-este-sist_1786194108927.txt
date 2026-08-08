@@ -1,0 +1,63 @@
+Faz  Substitua todo o conteúdo do index.js por este sistema de cadastro dinâmico de produtos com suporte a mídias/vídeos e comandos de administração:
+
+const { 
+Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, ChannelType, PermissionsBitField, EmbedBuilder } = require('discord.js'); const fs = require('fs'); const config = require('./config.json'); const client = new Client({ intents: [ GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent ] }); // Carregar ou criar o banco de dados dinâmico de produtos const DB_FILE = './produtos.json'; function carregarProdutos() { if (!fs.existsSync(DB_FILE)) { fs.writeFileSync(DB_FILE, JSON.stringify([], null, 2)); return []; } try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8')); } catch (e) { return []; } } function salvarProdutos(lista) { fs.writeFileSync(DB_FILE, JSON.stringify(lista, null, 2)); } const selecoesUsuario = new Map(); 
+
+client.once('ready', () => { console.log(🤖 Bot da Anbu ON como: ${client.user.tag}); });
+client.on('messageCreate', async (message) => { if (!message.guild || message.author.bot) return; const isAdmin = message.member.permissions.has(PermissionsBitField.Flags.Administrator); const args = message.content.split(' '); const command = args[0].toLowerCase();
+// ========================================== // 🛠️ COMANDOS EXCLUSIVOS DE ADMINISTRADOR // ==========================================
+// 1. Configurar Chave PIX if (command === '!setpix') { if (!isAdmin) return message.reply('❌ Apenas administradores podem alterar a chave PIX!'); const novaPix = args[1]; if (!novaPix) return message.reply('⚠️ Uso correto: !setpix <sua_chave_pix>');
+config.chavePix = novaPix; fs.writeFileSync('./config.json', JSON.stringify(config, null, 2)); return message.reply(✅ Chave PIX atualizada com sucesso para: \${novaPix}``); }
+// 2. Adicionar Produto // Formato: !addproduto Categoria | Nome do Produto | R$ Preço | Descrição Completa | LinkDoVideo(Opcional) if (command === '!addproduto') { if (!isAdmin) return message.reply('❌ Apenas administradores podem cadastrar produtos!');
+const conteudo = message.content.slice(12).trim(); const partes = conteudo.split('|').map(p => p.trim());
+if (partes.length < 4) { return message.reply('⚠️ Uso correto:\n!addproduto Categoria | Nome | Preço | Descrição | [LinkDoVideo/Imagem Opcional]\n\nExemplo:\n!addproduto VIP | Painel Red = | R$ 30,00 | Melhor auxílio sem ban | https://exemplo.com/video.mp4'); }
+const [categoria, nome, preco, descricao, media] = partes; const produtos = carregarProdutos();
+
+const novoProduto = { id: prod_${Date.now()}, categoria, nome, preco, descricao, media: media || null };
+produtos.push(novoProduto); salvarProdutos(produtos);
+return message.reply(✅ Produto **${nome}** (Categoria: **${categoria}**) cadastrado com sucesso!); }
+// 3. Deletar Produto if (command === '!delproduto') { if (!isAdmin) return message.reply('❌ Apenas administradores podem deletar produtos!'); const nomeOuId = message.content.slice(12).trim(); let produtos = carregarProdutos();
+const tamanhoInicial = produtos.length; produtos = produtos.filter(p => p.nome.toLowerCase() !== nomeOuId.toLowerCase() && p.id !== nomeOuId);
+if (produtos.length === tamanhoInicial) { return message.reply('❌ Produto não encontrado. Digite o nome exato.'); }
+
+salvarProdutos(produtos); return message.reply(🗑️ Produto removido com sucesso!); }
+// 4. Listar Produtos Cadastrados if (command === '!listarprodutos') { if (!isAdmin) return message.reply('❌ Apenas administradores podem ver a lista interna!'); const produtos = carregarProdutos(); if (produtos.length === 0) return message.reply('📦 Nenhum produto cadastrado até o momento.');
+let listaTxt = '📋 PRODUTOS CADASTRADOS:\n\n'; produtos.forEach((p, index) => { listaTxt += **${index + 1}. [${p.categoria}] ${p.nome}** — ${p.preco}\n📝 Descrição: ${p.descricao}\n🎥 Mídia: ${p.media || 'Nenhuma'}\n---\n; });
+
+return message.reply(listaTxt); }
+// 5. Enviar o Painel de Vendas no Canal if (command === '!painelvendas') { if (!isAdmin) return message.reply('❌ Apenas administradores podem enviar o painel!');
+const produtos = carregarProdutos(); if (produtos.length === 0) { return message.reply('⚠️ Cadastre pelo menos um produto com !addproduto antes de enviar o painel de vendas!'); }
+
+const embed = new EmbedBuilder() .setTitle('🛒 ANBU SHOP — CENTRAL DE VENDAS') .setDescription('Selecione abaixo o produto que deseja adquirir para abrir o seu carrinho!') .setColor('#2b2d31') .setFooter({ text: 'Atendimento automático & entrega rápida.' });
+const selectMenu = new StringSelectMenuBuilder() .setCustomId('selecionar_produto') .setPlaceholder('📦 Escolha o produto no menu...') .addOptions( produtos.slice(0, 25).map(p => ({ label: [${p.categoria}] ${p.nome}, description: ${p.preco} — ${p.descricao.slice(0, 50)}, value: p.id })) );
+const rowMenu = new ActionRowBuilder().addComponents(selectMenu); const rowBotao = new ActionRowBuilder().addComponents( new ButtonBuilder() .setCustomId('abrir_carrinho') .setLabel('🛒 Abrir Carrinho / Comprar') .setStyle(ButtonStyle.Success) );
+await message.channel.send({ embeds: [embed], components: [rowMenu, rowBotao] }); } });
+
+client.on('interactionCreate', async (interaction) => { const produtos = carregarProdutos();
+if (interaction.isStringSelectMenu() && interaction.customId === 'selecionar_produto') { const produtoSelecionado = produtos.find(p => p.id === interaction.values[0]); if (!produtoSelecionado) return interaction.reply({ content: '❌ Produto não encontrado.', ephemeral: true });
+selecoesUsuario.set(interaction.user.id, produtoSelecionado);
+
+await interaction.reply({ content: ✅ Você selecionou: **${produtoSelecionado.nome}** (${produtoSelecionado.preco}). Clique no botão **"Abrir Carrinho / Comprar"** para gerar seu pedido!, ephemeral: true }); }
+if (interaction.isButton() && interaction.customId === 'abrir_carrinho') { const guild = interaction.guild; const user = interaction.user; const produto = selecoesUsuario.get(user.id);
+
+if (!produto) { return interaction.reply({ content: '⚠️ Selecione um produto no menu suspenso primeiro!', ephemeral: true }); }
+
+const canalExistente = guild.channels.cache.find(c => c.name === carrinho-${user.username.toLowerCase()}); if (canalExistente) { return interaction.reply({ content: Você já possui um carrinho aberto em: ${canalExistente}, ephemeral: true }); }
+
+const ticketChannel = await guild.channels.create({ name: carrinho-${user.username}, type: ChannelType.GuildText, permissionOverwrites: [ { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] }, { id: user.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }, ], });
+
+const pixKey = config.chavePix || process.env.PIX_KEY || 'NÃO CONFIGURADA';
+const embedPix = new EmbedBuilder() .setTitle(🛒 SEU CARRINHO — ${produto.nome}) .setDescription(Olá ${user}, confira os detalhes do seu pedido:\n\n📂 **Categoria:** ${produto.categoria}\n📦 **Produto:** ${produto.nome}\n💰 **Valor:** ${produto.preco}\n📝 **Descrição:** ${produto.descricao}\n\n---\n🔑 **Chave PIX:** \${pixKey}`\n👤 Titular: ${config.donoNome || 'Anbu Shop'}\n\n📌 Envie o comprovante do PIX neste chat para liberação do pedido!`) .setColor('#00ff7f');
+if (produto.media && produto.media.startsWith('http')) { embedPix.setImage(produto.media); }
+
+const rowFechar = new ActionRowBuilder().addComponents( new ButtonBuilder() .setCustomId('fechar_carrinho') .setLabel('🔒 Fechar Carrinho (Apenas Admins)') .setStyle(ButtonStyle.Danger) );
+
+await ticketChannel.send({ content: ${user} ${produto.media ? \n🎥 Mídia do Produto: ${produto.media} : ''}, embeds: [embedPix], components: [rowFechar] });
+await interaction.reply({ content: Carrinho criado em: ${ticketChannel}, ephemeral: true }); }
+if (interaction.isButton() && interaction.customId === 'fechar_carrinho') { if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) { return interaction.reply({ content: '❌ Apenas administradores podem fechar este carrinho!', ephemeral: true }); }
+
+await interaction.reply('🔒 Este carrinho será fechado em 5 segundos...'); setTimeout(() => { interaction.channel.delete().catch(() => {}); }, 5000); } });
+
+client.login(process.env.DISCORD_TOKEN || config.token);
+
+ Depois reinicie o processo para colocar as alterações online.
