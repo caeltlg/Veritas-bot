@@ -1,6 +1,17 @@
 const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField, EmbedBuilder } = require('discord.js');
 const config = require('./config.json');
 
+const discordToken = process.env.DISCORD_TOKEN || config.token;
+const pixKey = process.env.PIX_KEY || config.chavePix;
+
+if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
+    throw new Error('DISCORD_TOKEN não configurado.');
+}
+
+if (!pixKey || pixKey === 'SUA_CHAVE_PIX_AQUI') {
+    throw new Error('PIX_KEY não configurado.');
+}
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -62,7 +73,7 @@ client.on('interactionCreate', async (interaction) => {
 
         const embedPix = new EmbedBuilder()
             .setTitle('⚡ CHAVE PIX PARA PAGAMENTO')
-            .setDescription(`Olá ${user}, faça o PIX para garantir seu produto!\n\n🔑 **Chave PIX:** \`${config.chavePix}\`\n👤 **Titular:** ${config.donoNome}\n\n📌 **Após fazer o PIX, envie o comprovante aqui neste chat para liberarmos seu pedido!**`)
+            .setDescription(`Olá ${user}, faça o PIX para garantir seu produto!\n\n🔑 **Chave PIX:** \`${pixKey}\`\n👤 **Titular:** ${config.donoNome}\n\n📌 **Após fazer o PIX, envie o comprovante aqui neste chat para liberarmos seu pedido!**`)
             .setColor('#00ff7f');
 
         await ticketChannel.send({ content: `${user}`, embeds: [embedPix] });
@@ -70,4 +81,4 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-client.login(config.token);
+client.login(discordToken);
