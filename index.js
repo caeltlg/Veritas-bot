@@ -67,7 +67,7 @@ const blacklist = new Set();
 const estatisticasCompradores = new Map();
 const cuponsAplicados = new Map();
 const vendasAprovadas = new Set();
-const convitesPorGuild = new Map();
+const invitesCache = new Map();
 const convitesMembros = new Map();
 
 function carregarProdutos() {
@@ -195,21 +195,15 @@ async function gerarEmbedTopCompradores(guild, listaCompradores) {
 async function sincronizarConvites(guild) {
     try {
         const convites = await guild.invites.fetch();
-        const usos = new Map(
-            convites.map((convite) => [
-                convite.code,
-                {
-                    uses: convite.uses || 0,
-                    inviterId: convite.inviter?.id || null,
-                },
-            ]),
+        const cacheAtual = new Map(
+            convites.map((convite) => [convite.code, convite.uses || 0]),
         );
-        const anterior = convitesPorGuild.get(guild.id) || new Map();
-        convitesPorGuild.set(guild.id, usos);
+        const cacheAnterior = invitesCache.get(guild.id);
+        invitesCache.set(guild.id, cacheAtual);
 
-        return { convites, anterior, usos };
+        return { convites, cacheAnterior };
     } catch (error) {
-        console.error(`Não foi possível sincronizar convites de ${guild.name}:`, error.message);
+        console.error(`Sem permissão para ler convites no servidor ${guild.name}:`, error.message);
         return null;
     }
 }
@@ -360,7 +354,7 @@ client.once('ready', async () => {
     console.log(`🤖 Bot ON como: ${client.user.tag}`);
 
     try {
-        await enviarStatus('🟢 **LOJA ON**');
+        await enviarStatus('**LOJA ON 🟢**');
     } catch (error) {
         console.error('Erro ao enviar mensagem de LOJA ON:', error.message);
     }
@@ -382,11 +376,12 @@ async function avisarOfflineEFechar() {
 
     try {
         if (client.isReady()) {
-            await enviarStatus('🔴 **LOJA OFF**');
+            await enviarStatus('**LOJA OFF 🔴**');
         }
     } catch (error) {
         console.error('Erro ao enviar mensagem de LOJA OFF:', error.message);
     } finally {
+        httpServer.close();
         process.exit(0);
     }
 }
@@ -607,10 +602,12 @@ client.on('guildMemberAdd', async (member) => {
     const resultado = await sincronizarConvites(member.guild);
     if (!resultado) return;
 
-    const conviteUsado = resultado.convites.find((convite) => {
-        const antes = resultado.anterior.get(convite.code)?.uses || 0;
-        return (convite.uses || 0) > antes;
-    });
+    const { convites, cacheAnterior } = resultado;
+    if (!cacheAnterior) return;
+
+    const conviteUsado = convites.find(
+        (convite) => (cacheAnterior.get(convite.code) || 0) < (convite.uses || 0),
+    );
     const inviterId = conviteUsado?.inviter?.id;
     if (!inviterId) return;
 
@@ -618,16 +615,17 @@ client.on('guildMemberAdd', async (member) => {
     const total = (convitesMembros.get(chave) || 0) + 1;
     convitesMembros.set(chave, total);
 
+    console.log(`${member.user.tag} entrou usando o convite de ${conviteUsado.inviter.tag}`);
+
     if (total === 2) {
         try {
             const inviter = await client.users.fetch(inviterId);
             await inviter.send(
-                '🎉 **Parabéns!** Você convidou 2 amigos para o servidor da Anbu!\n' +
-                '🎟️ Seu cupom exclusivo de **10% de desconto** é: **CONVITE10**\n' +
-                'Insira ele ao abrir seu próximo carrinho!',
+                '🎉 **PARABÉNS!** Você convidou 2 amigos para a Anbu Shop! ' +
+                'Seu cupom exclusivo de desconto é: `CONVITE10`',
             );
         } catch (error) {
-            console.error('Erro ao enviar PV do cupom:', error.message);
+            console.error(`Não foi possível enviar DM para ${conviteUsado.inviter.tag}:`, error.message);
         }
     }
 });
