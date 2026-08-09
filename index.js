@@ -7,6 +7,9 @@ const {
     ChannelType,
     PermissionsBitField,
     EmbedBuilder,
+    REST,
+    Routes,
+    SlashCommandBuilder,
 } = require('discord.js');
 const fs = require('fs');
 const config = require('./config.json');
@@ -69,8 +72,92 @@ function eImagem(url) {
     return /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
 }
 
+const slashCommands = [
+    new SlashCommandBuilder()
+        .setName('setpix')
+        .setDescription('Define a chave PIX usada nos pagamentos')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option
+                .setName('chave')
+                .setDescription('Nova chave PIX')
+                .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('addproduto')
+        .setDescription('Cadastra um produto')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option.setName('categoria').setDescription('Categoria do produto').setRequired(true)
+        )
+        .addStringOption((option) =>
+            option.setName('nome').setDescription('Nome do produto').setRequired(true)
+        )
+        .addStringOption((option) =>
+            option.setName('preco').setDescription('Preço do produto').setRequired(true)
+        )
+        .addStringOption((option) =>
+            option.setName('descricao').setDescription('Descrição ou tópicos').setRequired(true)
+        )
+        .addStringOption((option) =>
+            option.setName('midia').setDescription('URL de imagem ou vídeo').setRequired(false)
+        )
+        .addStringOption((option) =>
+            option.setName('entrega').setDescription('Conteúdo entregue após aprovação').setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('delproduto')
+        .setDescription('Remove um produto pelo nome ou ID')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option.setName('produto').setDescription('Nome exato ou ID do produto').setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('setestoque')
+        .setDescription('Define o estoque de um produto')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option.setName('produto').setDescription('Nome exato ou ID do produto').setRequired(true)
+        )
+        .addStringOption((option) =>
+            option
+                .setName('quantidade')
+                .setDescription('Número inteiro ou infinito')
+                .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('enviarproduto')
+        .setDescription('Publica um produto para venda neste canal')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option.setName('produto').setDescription('Nome exato ou ID do produto').setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('listarprodutos')
+        .setDescription('Lista os produtos cadastrados')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString()),
+].map((command) => command.toJSON());
+
+async function registrarSlashCommands() {
+    const rest = new REST({ version: '10' }).setToken(discordToken);
+    const guildId = process.env.DISCORD_GUILD_ID;
+    const route = guildId
+        ? Routes.applicationGuildCommands(client.user.id, guildId)
+        : Routes.applicationCommands(client.user.id);
+
+    await rest.put(route, { body: slashCommands });
+    console.log(
+        guildId
+            ? `✅ Slash Commands registrados no servidor ${guildId}.`
+            : '✅ Slash Commands registrados globalmente.'
+    );
+}
+
 client.once('ready', () => {
     console.log(`🤖 Bot ON como: ${client.user.tag}`);
+    registrarSlashCommands().catch((error) => {
+        console.error('❌ Falha ao registrar Slash Commands:', error.message);
+    });
 });
 
 client.on('messageCreate', async (message) => {
@@ -119,6 +206,7 @@ client.on('messageCreate', async (message) => {
             descricao: descricao || 'Sem descrição',
             media: media || null,
             entrega: entrega || 'Entrega enviada via suporte.',
+            estoque: null,
         });
 
         salvarProdutos(produtos);
@@ -153,6 +241,52 @@ client.on('messageCreate', async (message) => {
         );
     }
 
+    if (commandName === '!setestoque') {
+        if (!isAdmin) return message.reply('❌ Apenas administradores!');
+
+        const conteudo = message.content.slice('!setestoque'.length).trim();
+        const partes = conteudo.split('|').map((parte) => parte.trim());
+
+        if (partes.length < 2 || !partes[0] || !partes[1]) {
+            return message.reply(
+                '⚠️ Uso: `!setestoque <nome ou ID do produto> | <quantidade ou infinito>`'
+            );
+        }
+
+        const [nomeOuId, valorEstoque] = partes;
+        const produtos = carregarProdutos();
+        const produto = produtos.find(
+            (item) =>
+                item.id === nomeOuId ||
+                item.nome.toLowerCase() === nomeOuId.toLowerCase()
+        );
+
+        if (!produto) {
+            return message.reply('❌ Produto não encontrado. Use o nome exato ou o ID.');
+        }
+
+        if (valorEstoque.toLowerCase() === 'infinito') {
+            produto.estoque = null;
+            salvarProdutos(produtos);
+            return message.reply(
+                `♾️ Estoque do produto **${produto.nome}** definido como infinito!`
+            );
+        }
+
+        const quantidade = Number(valorEstoque);
+        if (!Number.isInteger(quantidade) || quantidade < 0) {
+            return message.reply(
+                '⚠️ A quantidade deve ser um número inteiro maior ou igual a zero, ou `infinito`.'
+            );
+        }
+
+        produto.estoque = quantidade;
+        salvarProdutos(produtos);
+        return message.reply(
+            `📦 Estoque do produto **${produto.nome}** definido para **${quantidade}** unidade(s)!`
+        );
+    }
+
     if (commandName === '!enviarproduto') {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
@@ -176,24 +310,30 @@ client.on('messageCreate', async (message) => {
             .setColor('#00ff00')
             .setDescription(
                 `📄 **Descrição**\n${topicos}\n\n` +
-                `💰 **Preço**\n${produto.preco} | ♾️ **Estoque**\n♾️ **Infinito**`
+                `💰 **Preço**\n${produto.preco}\n\n` +
+                `♾️ **Estoque**\n${produto.estoque === null || produto.estoque === undefined ? '♾️ Infinito' : produto.estoque}`
             );
 
         if (produto.media && eImagem(produto.media)) {
             embedProduto.setImage(produto.media);
         }
 
-        const botaoComprar = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`buy_${produto.id}`)
-                .setLabel('Comprar')
-                .setEmoji('🛒')
-                .setStyle(ButtonStyle.Success)
-        );
+        const componentes = [];
+        if (produto.estoque !== 0) {
+            componentes.push(
+                new ButtonBuilder()
+                    .setCustomId(`buy_${produto.id}`)
+                    .setLabel('Comprar')
+                    .setEmoji('🛒')
+                    .setStyle(ButtonStyle.Success)
+            );
+        }
 
         await message.channel.send({
             embeds: [embedProduto],
-            components: [botaoComprar],
+            components: componentes.length > 0
+                ? [new ActionRowBuilder().addComponents(componentes)]
+                : [],
         });
 
         if (message.deletable) {
@@ -222,6 +362,188 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+    if (interaction.isChatInputCommand()) {
+        const isAdmin = interaction.memberPermissions?.has(
+            PermissionsBitField.Flags.Administrator
+        );
+
+        if (!isAdmin) {
+            return interaction.reply({
+                content: '❌ Apenas administradores podem usar este comando.',
+                ephemeral: true,
+            });
+        }
+
+        if (interaction.commandName === 'setpix') {
+            const novaPix = interaction.options.getString('chave', true);
+            config.chavePix = novaPix;
+            fs.writeFileSync('./config.json', `${JSON.stringify(config, null, 2)}\n`);
+            return interaction.reply('✅ Chave PIX atualizada com sucesso.');
+        }
+
+        if (interaction.commandName === 'addproduto') {
+            const produto = {
+                id: `prod_${Date.now()}`,
+                categoria: interaction.options.getString('categoria', true),
+                nome: interaction.options.getString('nome', true),
+                preco: interaction.options.getString('preco', true),
+                descricao: interaction.options.getString('descricao', true),
+                media: interaction.options.getString('midia') || null,
+                entrega:
+                    interaction.options.getString('entrega') ||
+                    'Entrega enviada via suporte.',
+                estoque: null,
+            };
+
+            const produtos = carregarProdutos();
+            produtos.push(produto);
+            salvarProdutos(produtos);
+            return interaction.reply(
+                `✅ Produto **${produto.nome}** cadastrado com sucesso!`
+            );
+        }
+
+        if (interaction.commandName === 'delproduto') {
+            const nomeOuId = interaction.options.getString('produto', true);
+            const produtos = carregarProdutos();
+            const produto = produtos.find(
+                (item) =>
+                    item.id === nomeOuId ||
+                    item.nome.toLowerCase() === nomeOuId.toLowerCase()
+            );
+
+            if (!produto) {
+                return interaction.reply({
+                    content: '❌ Produto não encontrado. Use o nome exato ou o ID.',
+                    ephemeral: true,
+                });
+            }
+
+            salvarProdutos(produtos.filter((item) => item.id !== produto.id));
+            return interaction.reply(
+                `🗑️ Produto **${produto.nome}** removido com sucesso!`
+            );
+        }
+
+        if (interaction.commandName === 'setestoque') {
+            const nomeOuId = interaction.options.getString('produto', true);
+            const valorEstoque = interaction.options.getString('quantidade', true);
+            const produtos = carregarProdutos();
+            const produto = produtos.find(
+                (item) =>
+                    item.id === nomeOuId ||
+                    item.nome.toLowerCase() === nomeOuId.toLowerCase()
+            );
+
+            if (!produto) {
+                return interaction.reply({
+                    content: '❌ Produto não encontrado. Use o nome exato ou o ID.',
+                    ephemeral: true,
+                });
+            }
+
+            if (valorEstoque.toLowerCase() === 'infinito') {
+                produto.estoque = null;
+                salvarProdutos(produtos);
+                return interaction.reply(
+                    `♾️ Estoque do produto **${produto.nome}** definido como infinito!`
+                );
+            }
+
+            const quantidade = Number(valorEstoque);
+            if (!Number.isInteger(quantidade) || quantidade < 0) {
+                return interaction.reply(
+                    '⚠️ A quantidade deve ser um inteiro maior ou igual a zero, ou `infinito`.'
+                );
+            }
+
+            produto.estoque = quantidade;
+            salvarProdutos(produtos);
+            return interaction.reply(
+                `📦 Estoque do produto **${produto.nome}** definido para **${quantidade}** unidade(s)!`
+            );
+        }
+
+        if (interaction.commandName === 'listarprodutos') {
+            const produtos = carregarProdutos();
+            if (produtos.length === 0) {
+                return interaction.reply('📦 Nenhum produto cadastrado.');
+            }
+
+            const lista = produtos
+                .map(
+                    (produto, index) =>
+                        `**${index + 1}. ${produto.nome}** — ${produto.preco}\n` +
+                        `📦 Estoque: ${produto.estoque === null || produto.estoque === undefined ? '♾️ Infinito' : produto.estoque}\n` +
+                        `🚚 Entrega: \`${produto.entrega}\`\n---`
+                )
+                .join('\n');
+
+            return interaction.reply(`📋 **PRODUTOS CADASTRADOS:**\n\n${lista}`);
+        }
+
+        if (interaction.commandName === 'enviarproduto') {
+            const nomeOuId = interaction.options.getString('produto', true);
+            const produtos = carregarProdutos();
+            const produto = produtos.find(
+                (item) =>
+                    item.id === nomeOuId ||
+                    item.nome.toLowerCase() === nomeOuId.toLowerCase()
+            );
+
+            if (!produto) {
+                return interaction.reply({
+                    content: '❌ Produto não encontrado!',
+                    ephemeral: true,
+                });
+            }
+
+            const topicos = produto.descricao
+                .split(',')
+                .map((item) => `⚙️ **${item.trim()}**`)
+                .join('\n');
+            const embedProduto = new EmbedBuilder()
+                .setTitle(`🛍️ ${produto.nome}`)
+                .setColor('#00ff00')
+                .setDescription(
+                    `📄 **Descrição**\n${topicos}\n\n` +
+                    `💰 **Preço**\n${produto.preco}\n\n` +
+                    `♾️ **Estoque**\n${produto.estoque === null || produto.estoque === undefined ? '♾️ Infinito' : produto.estoque}`
+                );
+
+            if (produto.media && eImagem(produto.media)) {
+                embedProduto.setImage(produto.media);
+            }
+
+            const componentes = [];
+            if (produto.estoque !== 0) {
+                componentes.push(
+                    new ButtonBuilder()
+                        .setCustomId(`buy_${produto.id}`)
+                        .setLabel('Comprar')
+                        .setEmoji('🛒')
+                        .setStyle(ButtonStyle.Success)
+                );
+            }
+
+            await interaction.channel.send({
+                embeds: [embedProduto],
+                components: componentes.length
+                    ? [new ActionRowBuilder().addComponents(componentes)]
+                    : [],
+            });
+            return interaction.reply({
+                content: '✅ Produto publicado para venda.',
+                ephemeral: true,
+            });
+        }
+
+        return interaction.reply({
+            content: '❌ Comando não reconhecido.',
+            ephemeral: true,
+        });
+    }
+
     if (!interaction.isButton()) return;
 
     if (interaction.customId.startsWith('buy_')) {
@@ -232,6 +554,13 @@ client.on('interactionCreate', async (interaction) => {
         if (!produto) {
             return interaction.reply({
                 content: '❌ Produto indisponível.',
+                ephemeral: true,
+            });
+        }
+
+        if (produto.estoque === 0) {
+            return interaction.reply({
+                content: '❌ Este produto está sem estoque no momento.',
                 ephemeral: true,
             });
         }
@@ -354,6 +683,18 @@ client.on('interactionCreate', async (interaction) => {
                 content: '❌ Erro ao localizar o produto.',
                 ephemeral: true,
             });
+        }
+
+        if (produto.estoque !== null && produto.estoque !== undefined && produto.estoque <= 0) {
+            return interaction.reply({
+                content: '❌ Este produto ficou sem estoque e não pode ser entregue.',
+                ephemeral: true,
+            });
+        }
+
+        if (produto.estoque !== null && produto.estoque !== undefined) {
+            produto.estoque -= 1;
+            salvarProdutos(produtos);
         }
 
         const targetUser = await client.users.fetch(userId).catch(() => null);
