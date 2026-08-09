@@ -1,0 +1,10 @@
+🤖 Bot ON como: Veritas#5594
+(node:1169) DeprecationWarning: The ready event has been renamed to clientReady to distinguish it from the gateway READY event and will only emit under that name in v15. Please use clientReady instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✅ Slash Commands registrados globalmente.
+(node:1169) Warning: Supplying "ephemeral" for interaction response options is deprecated. Utilize flags instead.
+🤖 Bot ON como: Veritas#5594
+(node:1245) DeprecationWarning: The ready event has been renamed to clientReady to distinguish it from the gateway READY event and will only emit under that name in v15. Please use clientReady instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✅ Slash Commands registrados globalmente.
+(node:1245) Warning: Supplying "ephemeral" for interaction response options is deprecated. Utilize flags instead.

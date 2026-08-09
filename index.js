@@ -23,6 +23,7 @@ process.on('unhandledRejection', (error) => {
 });
 
 const discordToken = process.env.DISCORD_TOKEN || config.token;
+const CANAL_STATUS_ID = '1536057245958275094';
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -153,12 +154,48 @@ async function registrarSlashCommands() {
     );
 }
 
-client.once('ready', () => {
+async function enviarStatus(mensagem) {
+    const canal = await client.channels.fetch(CANAL_STATUS_ID);
+    if (!canal || !canal.isTextBased()) {
+        throw new Error('Canal de status não encontrado ou não é baseado em texto.');
+    }
+
+    await canal.send(mensagem);
+}
+
+client.once('ready', async () => {
     console.log(`🤖 Bot ON como: ${client.user.tag}`);
+
+    try {
+        await enviarStatus('🟢 **LOJA ON**');
+    } catch (error) {
+        console.error('Erro ao enviar mensagem de LOJA ON:', error.message);
+    }
+
     registrarSlashCommands().catch((error) => {
         console.error('❌ Falha ao registrar Slash Commands:', error.message);
     });
 });
+
+let encerrando = false;
+
+async function avisarOfflineEFechar() {
+    if (encerrando) return;
+    encerrando = true;
+
+    try {
+        if (client.isReady()) {
+            await enviarStatus('🔴 **LOJA OFF**');
+        }
+    } catch (error) {
+        console.error('Erro ao enviar mensagem de LOJA OFF:', error.message);
+    } finally {
+        process.exit(0);
+    }
+}
+
+process.on('SIGINT', avisarOfflineEFechar);
+process.on('SIGTERM', avisarOfflineEFechar);
 
 client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot) return;

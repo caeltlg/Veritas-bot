@@ -225,6 +225,26 @@
     "descricao": "📘 Nível 67 | Fotos, vídeos e prova duo disponíveis após abrir o carrinho!",
     "media": null,
     "entrega": "Conteúdo via suporte. Espere um momento até o suporte estar online.",
-    "estoque": 0
+    "estoque": 1
+  },
+  {
+    "id": "prod_1786238161525",
+    "categoria": "Software",
+    "nome": "Veritas Permanente",
+    "preco": "R$ 15,00",
+    "descricao": "⚡ Licença Vitalícia do Veritas | Acesso completo e atualizações inclusas!",
+    "media": null,
+    "entrega": "Obrigado pela compra! Abra um ticket em nosso servidor para receber a sua chave de ativação e o suporte de instalação.",
+    "estoque": null
+  },
+  {
+    "id": "prod_1786281641145",
+    "categoria": "Serviços",
+    "nome": "Criação de Servidores & Sites",
+    "preco": "Preço Personalizado",
+    "descricao": "🛠️ Deixe seu projeto 100% profissional e pronto para faturar! Criamos estruturas completas de Discord (canais, cargos, bots e proteção) e Sites/Landing Pages modernos. O valor depende do seu projeto e cabe no seu bolso!",
+    "media": null,
+    "entrega": "Obrigado pelo interesse! Mande a sua ideia no ticket e nossa equipe fará o seu orçamento personalizado sem compromisso.",
+    "estoque": null
   }
 ]
