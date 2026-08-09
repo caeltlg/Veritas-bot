@@ -992,7 +992,7 @@ client.on('interactionCreate', async (interaction) => {
             .setCustomId('campo_cupom')
             .setLabel('Digite o seu código de cupom:')
             .setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex: CONVITE10')
+            .setPlaceholder('Ex: EXEMPLO20')
             .setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(inputCupom));
         return interaction.showModal(modal);
