@@ -34,6 +34,7 @@ const CANAL_VENDAS_ID = '1536059223211769926';
 const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
 const CARGO_VIP_ID = '1536067928464826368';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
+const CARGO_VIP_RUBI_ID = '1536090550933917727';
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -133,27 +134,62 @@ function valorComDesconto(preco, descontoPorcentagem = 0) {
 }
 
 async function atualizarRanking(guild) {
-    const ranking = Array.from(estatisticasCompradores.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-    const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
-    const textoRanking = ranking.length
-        ? ranking
-            .map(([id, valor], index) => `${medalhas[index]} <@${id}> — **${formatarValor(valor)}**`)
-            .join('\n')
-        : 'Ainda não há compras registradas.';
-
     const canalTop = await guild.channels.fetch(CANAL_TOP_COMPRADORES_ID).catch(() => null);
     if (canalTop?.isTextBased()) {
-        await canalTop.send({
-            embeds: [
-                new EmbedBuilder()
-                    .setTitle('🏆 Ranking de Clientes')
-                    .setDescription(`🏆 **TOP COMPRADORES DA ANBU** 🏆\n\n${textoRanking}`)
-                    .setColor(0xFFD700),
-            ],
-        });
+        const ranking = Array.from(estatisticasCompradores.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([userId, totalGasto]) => ({ userId, totalGasto }));
+
+        await canalTop.send({ embeds: [await gerarEmbedTopCompradores(guild, ranking)] });
     }
+}
+
+async function verificarEConcederVip(guild, userId, totalGasto) {
+    if (totalGasto < 200) return;
+
+    try {
+        const membro = await guild.members.fetch(userId);
+        if (membro && !membro.roles.cache.has(CARGO_VIP_RUBI_ID)) {
+            await membro.roles.add(CARGO_VIP_RUBI_ID);
+            console.log(`💎 VIP Rubi concedido automaticamente para ${membro.user.tag}`);
+        }
+    } catch (error) {
+        console.error(`Erro ao adicionar cargo VIP Rubi ao usuário ${userId}:`, error.message);
+    }
+}
+
+async function gerarEmbedTopCompradores(guild, listaCompradores) {
+    const embed = new EmbedBuilder()
+        .setTitle('🏆 RANKING - TOP COMPRADORES ANBU SHOP')
+        .setColor('#ff0055')
+        .setTimestamp();
+
+    const linhas = [];
+    for (let i = 0; i < listaCompradores.length; i += 1) {
+        const item = listaCompradores[i];
+        let cargoNome = 'Membro';
+
+        try {
+            const membro = await guild.members.fetch(item.userId);
+            const maiorCargo = membro.roles.highest;
+            if (maiorCargo && maiorCargo.id !== guild.id) {
+                cargoNome = `<@&${maiorCargo.id}>`;
+            }
+        } catch {
+            cargoNome = 'N/A';
+        }
+
+        const posicao =
+            i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i + 1}**`;
+        linhas.push(
+            `${posicao} <@${item.userId}> | **Cargo:** ${cargoNome}\n` +
+            `💰 **Total Gasto:** ${formatarValor(item.totalGasto)}`,
+        );
+    }
+
+    embed.setDescription(linhas.join('\n\n') || 'Nenhuma compra registrada ainda.');
+    return embed;
 }
 
 async function sincronizarConvites(guild) {
@@ -204,10 +240,9 @@ async function aprovarVendaEGerenciarCliente(
         );
     }
 
-    estatisticasCompradores.set(
-        clienteId,
-        (estatisticasCompradores.get(clienteId) || 0) + valorPago,
-    );
+    const totalGasto = (estatisticasCompradores.get(clienteId) || 0) + valorPago;
+    estatisticasCompradores.set(clienteId, totalGasto);
+    await verificarEConcederVip(guild, clienteId, totalGasto);
     await atualizarRanking(guild);
 }
 
@@ -1092,20 +1127,6 @@ client.on('interactionCreate', async (interaction) => {
                 );
 
             await logChannel.send({ embeds: [embedLog] });
-        }
-
-        try {
-            const canalVendas = await client.channels.fetch(CANAL_VENDAS_ID);
-            if (canalVendas?.isTextBased()) {
-                await canalVendas.send(
-                    `🎉 <@${userId}> adquiriu **${produto.nome}** por **${formatarValor(valorPago)}** na loja! Obrigado pela preferência! 🚀`
-                );
-            }
-        } catch (error) {
-            console.error(
-                'Erro ao enviar comprovante no canal de vendas:',
-                error.message
-            );
         }
 
         try {
