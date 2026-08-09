@@ -14,6 +14,7 @@ const {
     Routes,
     SlashCommandBuilder,
 } = require('discord.js');
+const express = require('express');
 const fs = require('fs');
 const config = require('./config.json');
 
@@ -26,6 +27,8 @@ process.on('unhandledRejection', (error) => {
 });
 
 const discordToken = process.env.DISCORD_TOKEN || config.token;
+const app = express();
+const HTTP_PORT = 3000;
 const CANAL_STATUS_ID = '1536057245958275094';
 const CANAL_VENDAS_ID = '1536059223211769926';
 const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
@@ -35,6 +38,14 @@ const CARGO_APRENDIZ_ID = '1536068104004698295';
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
 }
+
+app.get('/', (_req, res) => {
+    res.status(200).send('Bot Veritas está rodando perfeitamente!');
+});
+
+const httpServer = app.listen(HTTP_PORT, () => {
+    console.log(`🌐 Servidor web ativo na porta ${HTTP_PORT}`);
+});
 
 const client = new Client({
     intents: [
@@ -347,6 +358,14 @@ async function avisarOfflineEFechar() {
 
 process.on('SIGINT', avisarOfflineEFechar);
 process.on('SIGTERM', avisarOfflineEFechar);
+
+client.on('error', (error) => {
+    if (error?.code === 10062 || error?.rawError?.code === 10062) {
+        return;
+    }
+
+    console.error('Erro no cliente Discord:', error);
+});
 
 client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot) return;
