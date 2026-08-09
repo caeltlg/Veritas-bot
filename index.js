@@ -7,6 +7,9 @@ const {
     ChannelType,
     PermissionsBitField,
     EmbedBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
     REST,
     Routes,
     SlashCommandBuilder,
@@ -25,6 +28,9 @@ process.on('unhandledRejection', (error) => {
 const discordToken = process.env.DISCORD_TOKEN || config.token;
 const CANAL_STATUS_ID = '1536057245958275094';
 const CANAL_VENDAS_ID = '1536059223211769926';
+const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
+const CARGO_VIP_ID = '1536067928464826368';
+const CARGO_APRENDIZ_ID = '1536068104004698295';
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -35,10 +41,22 @@ const client = new Client({
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildInvites,
     ],
 });
 
 const DB_FILE = './produtos.json';
+const cuponsValidos = new Map([
+    ['CONVITE10', { descontoPorcentagem: 10 }],
+    ['BEMVINDO5', { descontoPorcentagem: 5 }],
+]);
+const blacklist = new Set();
+const estatisticasCompradores = new Map();
+const cuponsAplicados = new Map();
+const vendasAprovadas = new Set();
+const convitesPorGuild = new Map();
+const convitesMembros = new Map();
 
 function carregarProdutos() {
     if (!fs.existsSync(DB_FILE)) {
@@ -77,6 +95,109 @@ function eImagem(url) {
 function formatarPreco(preco) {
     const valor = String(preco);
     return valor.trim().toLowerCase().startsWith('r$') ? valor : `R$ ${valor}`;
+}
+
+function valorNumerico(preco) {
+    const normalizado = String(preco)
+        .replace(/[^\d,.-]/g, '')
+        .replace(/\.(?=\d{3}(?:\D|$))/g, '')
+        .replace(',', '.');
+    const valor = Number(normalizado);
+    return Number.isFinite(valor) ? valor : 0;
+}
+
+function formatarValor(valor) {
+    return valor.toLocaleString('pt-BR', {
+        style: 'currency',
+        currency: 'BRL',
+    });
+}
+
+function chaveCupom(interaction) {
+    return `${interaction.channelId}:${interaction.user.id}`;
+}
+
+function valorComDesconto(preco, descontoPorcentagem = 0) {
+    return valorNumerico(preco) * (1 - descontoPorcentagem / 100);
+}
+
+async function atualizarRanking(guild) {
+    const ranking = Array.from(estatisticasCompradores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+    const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+    const textoRanking = ranking.length
+        ? ranking
+            .map(([id, valor], index) => `${medalhas[index]} <@${id}> — **${formatarValor(valor)}**`)
+            .join('\n')
+        : 'Ainda não há compras registradas.';
+
+    const canalTop = await guild.channels.fetch(CANAL_TOP_COMPRADORES_ID).catch(() => null);
+    if (canalTop?.isTextBased()) {
+        await canalTop.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setTitle('🏆 Ranking de Clientes')
+                    .setDescription(`🏆 **TOP COMPRADORES DA ANBU** 🏆\n\n${textoRanking}`)
+                    .setColor(0xFFD700),
+            ],
+        });
+    }
+}
+
+async function sincronizarConvites(guild) {
+    try {
+        const convites = await guild.invites.fetch();
+        const usos = new Map(
+            convites.map((convite) => [
+                convite.code,
+                {
+                    uses: convite.uses || 0,
+                    inviterId: convite.inviter?.id || null,
+                },
+            ]),
+        );
+        const anterior = convitesPorGuild.get(guild.id) || new Map();
+        convitesPorGuild.set(guild.id, usos);
+
+        return { convites, anterior, usos };
+    } catch (error) {
+        console.error(`Não foi possível sincronizar convites de ${guild.name}:`, error.message);
+        return null;
+    }
+}
+
+async function aprovarVendaEGerenciarCliente(
+    guild,
+    clienteId,
+    nomeProduto,
+    valorPago,
+    tipoProduto,
+) {
+    const membro = await guild.members.fetch(clienteId);
+    const temVip = membro.roles.cache.has(CARGO_VIP_ID);
+    const temAprendiz = membro.roles.cache.has(CARGO_APRENDIZ_ID);
+    const tipo = String(tipoProduto || '').toLowerCase();
+
+    if (tipo === 'mentoria' || tipo === 'ebook') {
+        if (temVip) await membro.roles.remove(CARGO_VIP_ID);
+        if (!temAprendiz) await membro.roles.add(CARGO_APRENDIZ_ID);
+    } else if (tipo === 'auxilio' && !temAprendiz && !temVip) {
+        await membro.roles.add(CARGO_VIP_ID);
+    }
+
+    const canalVendas = await guild.channels.fetch(CANAL_VENDAS_ID).catch(() => null);
+    if (canalVendas?.isTextBased()) {
+        await canalVendas.send(
+            `🎉 <@${clienteId}> adquiriu **${nomeProduto}** por **${formatarValor(valorPago)}** na loja! Obrigado pela preferência! 🚀`,
+        );
+    }
+
+    estatisticasCompradores.set(
+        clienteId,
+        (estatisticasCompradores.get(clienteId) || 0) + valorPago,
+    );
+    await atualizarRanking(guild);
 }
 
 const slashCommands = [
@@ -143,6 +264,26 @@ const slashCommands = [
         .setName('listarprodutos')
         .setDescription('Lista os produtos cadastrados')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString()),
+    new SlashCommandBuilder()
+        .setName('blacklist')
+        .setDescription('Gerencia usuários impedidos de comprar')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('add')
+                .setDescription('Adiciona um usuário à blacklist')
+                .addUserOption((option) =>
+                    option.setName('usuario').setDescription('Usuário a bloquear').setRequired(true),
+                ),
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName('remove')
+                .setDescription('Remove um usuário da blacklist')
+                .addUserOption((option) =>
+                    option.setName('usuario').setDescription('Usuário a desbloquear').setRequired(true),
+                ),
+        ),
 ].map((command) => command.toJSON());
 
 async function registrarSlashCommands() {
@@ -181,6 +322,10 @@ client.once('ready', async () => {
     registrarSlashCommands().catch((error) => {
         console.error('❌ Falha ao registrar Slash Commands:', error.message);
     });
+
+    for (const guild of client.guilds.cache.values()) {
+        await sincronizarConvites(guild);
+    }
 });
 
 let encerrando = false;
@@ -404,7 +549,66 @@ client.on('messageCreate', async (message) => {
     }
 });
 
+client.on('guildMemberAdd', async (member) => {
+    const resultado = await sincronizarConvites(member.guild);
+    if (!resultado) return;
+
+    const conviteUsado = resultado.convites.find((convite) => {
+        const antes = resultado.anterior.get(convite.code)?.uses || 0;
+        return (convite.uses || 0) > antes;
+    });
+    const inviterId = conviteUsado?.inviter?.id;
+    if (!inviterId) return;
+
+    const chave = `${member.guild.id}:${inviterId}`;
+    const total = (convitesMembros.get(chave) || 0) + 1;
+    convitesMembros.set(chave, total);
+
+    if (total === 2) {
+        try {
+            const inviter = await client.users.fetch(inviterId);
+            await inviter.send(
+                '🎉 **Parabéns!** Você convidou 2 amigos para o servidor da Anbu!\n' +
+                '🎟️ Seu cupom exclusivo de **10% de desconto** é: **CONVITE10**\n' +
+                'Insira ele ao abrir seu próximo carrinho!',
+            );
+        } catch (error) {
+            console.error('Erro ao enviar PV do cupom:', error.message);
+        }
+    }
+});
+
 client.on('interactionCreate', async (interaction) => {
+    if (interaction.isModalSubmit() && interaction.customId === 'modal_cupom_desconto') {
+        if (blacklist.has(interaction.user.id)) {
+            return interaction.reply({
+                content: '❌ Você está na blacklist e não pode realizar compras nesta loja.',
+                ephemeral: true,
+            });
+        }
+
+        const codigo = interaction.fields
+            .getTextInputValue('campo_cupom')
+            .toUpperCase()
+            .trim();
+        const cupom = cuponsValidos.get(codigo);
+        if (!cupom) {
+            return interaction.reply({
+                content: '❌ **Cupom inválido ou expirado.**',
+                ephemeral: true,
+            });
+        }
+
+        cuponsAplicados.set(chaveCupom(interaction), {
+            codigo,
+            descontoPorcentagem: cupom.descontoPorcentagem,
+        });
+        return interaction.reply({
+            content: `✅ **Cupom aplicado com sucesso!** Você recebeu **${cupom.descontoPorcentagem}% de desconto** nesta compra.`,
+            ephemeral: true,
+        });
+    }
+
     if (interaction.isChatInputCommand()) {
         const isAdmin = interaction.memberPermissions?.has(
             PermissionsBitField.Flags.Administrator
@@ -413,6 +617,25 @@ client.on('interactionCreate', async (interaction) => {
         if (!isAdmin) {
             return interaction.reply({
                 content: '❌ Apenas administradores podem usar este comando.',
+                ephemeral: true,
+            });
+        }
+
+        if (interaction.commandName === 'blacklist') {
+            const subcomando = interaction.options.getSubcommand();
+            const usuario = interaction.options.getUser('usuario', true);
+
+            if (subcomando === 'add') {
+                blacklist.add(usuario.id);
+                return interaction.reply({
+                    content: `⛔ <@${usuario.id}> foi adicionado à **Blacklist**!`,
+                    ephemeral: true,
+                });
+            }
+
+            blacklist.delete(usuario.id);
+            return interaction.reply({
+                content: `✅ <@${usuario.id}> foi removido da **Blacklist**!`,
                 ephemeral: true,
             });
         }
@@ -618,6 +841,13 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        if (blacklist.has(user.id)) {
+            return interaction.reply({
+                content: '❌ Você está na blacklist e não pode realizar compras nesta loja.',
+                ephemeral: true,
+            });
+        }
+
         const nomeCarrinho = nomeDoCarrinho(user);
         const canalExistente = guild.channels.cache.find(
             (canal) => canal.name === nomeCarrinho
@@ -654,7 +884,8 @@ client.on('interactionCreate', async (interaction) => {
             .setDescription(
                 `Olá ${user},\n\n` +
                 `🛒 **Produto:** ${produto.nome}\n` +
-                `💰 **Valor:** ${produto.preco}\n\n---\n` +
+                `💰 **Valor:** ${formatarPreco(produto.preco)}\n` +
+                '🎟️ **Cupom:** Você pode aplicar um cupom de desconto abaixo.\n\n---\n' +
                 '📌 **Instruções:**\n' +
                 '1️⃣ Clique no botão **Gerar PIX** abaixo para obter os dados de pagamento.\n' +
                 '2️⃣ Após realizar o pagamento, envie o comprovante neste chat.\n' +
@@ -667,6 +898,10 @@ client.on('interactionCreate', async (interaction) => {
                 .setLabel('Gerar PIX')
                 .setEmoji('💚')
                 .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('aplicar_cupom')
+                .setLabel('Aplicar Cupom')
+                .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId(`aprovar_${produto.id}_${user.id}`)
                 .setLabel('Aprovar Venda (Admin)')
@@ -686,6 +921,27 @@ client.on('interactionCreate', async (interaction) => {
             content: `✅ Carrinho criado: ${ticketChannel}`,
             ephemeral: true,
         });
+    }
+
+    if (interaction.customId === 'aplicar_cupom') {
+        if (blacklist.has(interaction.user.id)) {
+            return interaction.reply({
+                content: '❌ Você está na blacklist e não pode realizar compras nesta loja.',
+                ephemeral: true,
+            });
+        }
+
+        const modal = new ModalBuilder()
+            .setCustomId('modal_cupom_desconto')
+            .setTitle('Aplicar Cupom de Desconto');
+        const inputCupom = new TextInputBuilder()
+            .setCustomId('campo_cupom')
+            .setLabel('Digite o seu código de cupom:')
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ex: CONVITE10')
+            .setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(inputCupom));
+        return interaction.showModal(modal);
     }
 
     if (interaction.customId.startsWith('gerarpix_')) {
@@ -728,6 +984,14 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        const vendaKey = `${interaction.channelId}:${produtoId}:${userId}`;
+        if (vendasAprovadas.has(vendaKey)) {
+            return interaction.reply({
+                content: '⚠️ Esta venda já foi aprovada anteriormente.',
+                ephemeral: true,
+            });
+        }
+
         if (produto.estoque !== null && produto.estoque !== undefined && produto.estoque <= 0) {
             return interaction.reply({
                 content: '❌ Este produto ficou sem estoque e não pode ser entregue.',
@@ -735,6 +999,11 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        const cupom = cuponsAplicados.get(`${interaction.channelId}:${userId}`);
+        const descontoPorcentagem = cupom?.descontoPorcentagem || 0;
+        const valorPago = valorComDesconto(produto.preco, descontoPorcentagem);
+
+        vendasAprovadas.add(vendaKey);
         if (produto.estoque !== null && produto.estoque !== undefined) {
             produto.estoque -= 1;
             salvarProdutos(produtos);
@@ -796,7 +1065,10 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(
                     `👤 **Usuário:** <@${userId}>\n` +
                     `🛒 **Produto:** ${produto.nome}\n` +
-                    `💰 **Valor:** ${formatarPreco(produto.preco)}\n` +
+                        `💰 **Valor:** ${formatarValor(valorPago)}\n` +
+                        (descontoPorcentagem
+                            ? `🎟️ **Cupom:** ${cupom.codigo} (-${descontoPorcentagem}%)\n`
+                            : '') +
                     '⚙️ **Modalidade:** PIX'
                 );
 
@@ -807,7 +1079,7 @@ client.on('interactionCreate', async (interaction) => {
             const canalVendas = await client.channels.fetch(CANAL_VENDAS_ID);
             if (canalVendas?.isTextBased()) {
                 await canalVendas.send(
-                    `🎉 <@${userId}> adquiriu **${produto.nome}** por **${formatarPreco(produto.preco)}** na loja! Obrigado pela preferência! 🚀`
+                    `🎉 <@${userId}> adquiriu **${produto.nome}** por **${formatarValor(valorPago)}** na loja! Obrigado pela preferência! 🚀`
                 );
             }
         } catch (error) {
@@ -817,6 +1089,19 @@ client.on('interactionCreate', async (interaction) => {
             );
         }
 
+        try {
+            await aprovarVendaEGerenciarCliente(
+                interaction.guild,
+                userId,
+                produto.nome,
+                valorPago,
+                produto.categoria,
+            );
+        } catch (error) {
+            console.error('Erro ao atualizar cliente e ranking:', error.message);
+        }
+
+        cuponsAplicados.delete(`${interaction.channelId}:${userId}`);
         await interaction.reply({
             content: enviadoPorDm
                 ? '✅ Pagamento aprovado, produto enviado na DM e log registrado!'
