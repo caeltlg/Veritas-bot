@@ -24,6 +24,7 @@ process.on('unhandledRejection', (error) => {
 
 const discordToken = process.env.DISCORD_TOKEN || config.token;
 const CANAL_STATUS_ID = '1536057245958275094';
+const CANAL_VENDAS_ID = '1536059223211769926';
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -71,6 +72,11 @@ function nomeDoCarrinho(user) {
 
 function eImagem(url) {
     return /\.(jpg|jpeg|png|gif|webp)(\?.*)?$/i.test(url);
+}
+
+function formatarPreco(preco) {
+    const valor = String(preco);
+    return valor.trim().toLowerCase().startsWith('r$') ? valor : `R$ ${valor}`;
 }
 
 const slashCommands = [
@@ -790,11 +796,25 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(
                     `👤 **Usuário:** <@${userId}>\n` +
                     `🛒 **Produto:** ${produto.nome}\n` +
-                    `💰 **Valor:** ${produto.preco}\n` +
+                    `💰 **Valor:** ${formatarPreco(produto.preco)}\n` +
                     '⚙️ **Modalidade:** PIX'
                 );
 
             await logChannel.send({ embeds: [embedLog] });
+        }
+
+        try {
+            const canalVendas = await client.channels.fetch(CANAL_VENDAS_ID);
+            if (canalVendas?.isTextBased()) {
+                await canalVendas.send(
+                    `🎉 <@${userId}> adquiriu **${produto.nome}** por **${formatarPreco(produto.preco)}** na loja! Obrigado pela preferência! 🚀`
+                );
+            }
+        } catch (error) {
+            console.error(
+                'Erro ao enviar comprovante no canal de vendas:',
+                error.message
+            );
         }
 
         await interaction.reply({
