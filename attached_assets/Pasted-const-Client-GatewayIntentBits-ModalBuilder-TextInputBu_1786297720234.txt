@@ -1,0 +1,194 @@
+const { 
+    Client, 
+    GatewayIntentBits, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle, 
+    ActionRowBuilder, 
+    EmbedBuilder, 
+    SlashCommandBuilder, 
+    PermissionFlagsBits 
+} = require('discord.js');
+
+// ==========================================
+// 📌 CONFIGURAÇÕES DE IDs
+// ==========================================
+const CANAL_STATUS_ID = '1536057245958275094';
+const CANAL_VENDAS_ID = '1536059223211769926';
+const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
+
+const CARGO_VIP_ID = '1536067928464826368';
+const CARGO_APRENDIZ_ID = '1536068104004698295';
+
+// BANCO DE DADOS EM MEMÓRIA (Replit)
+const cuponsValidos = new Map([
+    ['CONVITE10', { descontoPorcentagem: 10 }],
+    ['BEMVINDO5', { descontoPorcentagem: 5 }]
+]);
+const blacklist = new Set(); 
+const estatisticasCompradores = new Map(); // ID -> Valor Total Gasto
+const convitesMembros = new Map(); // ID_Inviter -> Quantidade de Entradas
+
+// ==========================================
+// 🟢/🔴 AVISO AUTOMÁTICO DE LOJA ON / LOJA OFF
+// ==========================================
+client.once('ready', async () => {
+    console.log(`Veritas ligado como ${client.user.tag}`);
+    try {
+        const canal = await client.channels.fetch(CANAL_STATUS_ID);
+        if (canal) await canal.send('🟢 **LOJA ON**');
+    } catch (err) {
+        console.error('Erro ao enviar mensagem de LOJA ON:', err);
+    }
+});
+
+async function avisarOfflineEFechar() {
+    try {
+        const canal = await client.channels.fetch(CANAL_STATUS_ID);
+        if (canal) await canal.send('🔴 **LOJA OFF**');
+    } catch (err) {
+        console.error('Erro ao enviar mensagem de LOJA OFF:', err);
+    } finally {
+        process.exit(0);
+    }
+}
+process.on('SIGINT', avisarOfflineEFechar);
+process.on('SIGTERM', avisarOfflineEFechar);
+
+// ==========================================
+// 🎟️ 1. INSERIR CUPOM NO TICKET
+// ==========================================
+async function abrirModalCupom(interaction) {
+    if (blacklist.has(interaction.user.id)) {
+        return interaction.reply({ 
+            content: '❌ Você está na blacklist e não pode realizar compras nesta loja.', 
+            ephemeral: true 
+        });
+    }
+
+    const modal = new ModalBuilder()
+        .setCustomId('modal_cupom_desconto')
+        .setTitle('Aplicar Cupom de Desconto');
+
+    const inputCupom = new TextInputBuilder()
+        .setCustomId('campo_cupom')
+        .setLabel('Digite o seu código de cupom:')
+        .setStyle(TextInputStyle.Short)
+        .setPlaceholder('Ex: CONVITE10')
+        .setRequired(true);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(inputCupom));
+    await interaction.showModal(modal);
+}
+
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isModalSubmit() || interaction.customId !== 'modal_cupom_desconto') return;
+
+    const codigo = interaction.fields.getTextInputValue('campo_cupom').toUpperCase().trim();
+
+    if (cuponsValidos.has(codigo)) {
+        const dados = cuponsValidos.get(codigo);
+        await interaction.reply({ 
+            content: `✅ **Cupom aplicado com sucesso!** Você recebeu **${dados.descontoPorcentagem}% de desconto**!`, 
+            ephemeral: true 
+        });
+    } else {
+        await interaction.reply({ 
+            content: '❌ **Cupom inválido ou expirado.**', 
+            ephemeral: true 
+        });
+    }
+});
+
+// ==========================================
+// 👥 2. RASTREADOR DE CONVITES (2 INVITES = CUPOM 10%)
+// ==========================================
+client.on('guildMemberAdd', async (member) => {
+    const totalInvites = (convitesMembros.get(member.inviterId) || 0) + 1;
+    convitesMembros.set(member.inviterId, totalInvites);
+
+    if (totalInvites === 2) {
+        try {
+            const inviter = await client.users.fetch(member.inviterId);
+            await inviter.send(
+                `🎉 **Parabéns!** Você convidou 2 amigos para o servidor da Anbu!\n` +
+                `🎟️ Seu cupom exclusivo de **10% de desconto** é: **CONVITE10**\n` +
+                `Insira ele ao abrir seu próximo carrinho!`
+            );
+        } catch (err) {
+            console.error('Erro ao enviar PV do cupom:', err);
+        }
+    }
+});
+
+// ==========================================
+// ⛔ 3. BLACKLIST (/blacklist)
+// ==========================================
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand() || interaction.commandName !== 'blacklist') return;
+
+    const sub = interaction.options.getSubcommand();
+    const target = interaction.options.getUser('usuario');
+
+    if (sub === 'add') {
+        blacklist.add(target.id);
+        await interaction.reply({ content: `⛔ <@${target.id}> foi adicionado à **Blacklist**!`, ephemeral: true });
+    } else if (sub === 'remove') {
+        blacklist.delete(target.id);
+        await interaction.reply({ content: `✅ <@${target.id}> foi removido da **Blacklist**!`, ephemeral: true });
+    }
+});
+
+// ==========================================
+// 🏆 4. TOP COMPRADORES, AVISO DE VENDA E CARGOS
+// ==========================================
+async function aprovarVendaEGerenciarCliente(guild, clienteId, nomeProduto, valorPago, tipoProduto) {
+    try {
+        const membro = await guild.members.fetch(clienteId);
+
+        // --- LÓGICA DE CARGOS ---
+        const temVip = membro.roles.cache.has(CARGO_VIP_ID);
+        const temAprendiz = membro.roles.cache.has(CARGO_APRENDIZ_ID);
+
+        if (tipoProduto === 'mentoria' || tipoProduto === 'ebook') {
+            if (temVip) await membro.roles.remove(CARGO_VIP_ID);
+            if (!temAprendiz) await membro.roles.add(CARGO_APRENDIZ_ID);
+        } else if (tipoProduto === 'auxilio') {
+            if (!temAprendiz && !temVip) {
+                await membro.roles.add(CARGO_VIP_ID);
+            }
+        }
+
+        // --- NOTIFICAÇÃO NO CANAL #VENDAS ---
+        const canalVendas = await guild.channels.fetch(CANAL_VENDAS_ID);
+        if (canalVendas) {
+            await canalVendas.send(
+                `🎉 <@${clienteId}> adquiriu **${nomeProduto}** por **R$ ${valorPago.toFixed(2)}** na loja! Obrigado pela preferência! 🚀`
+            );
+        }
+
+        // --- ATUALIZAÇÃO DO TOP COMPRADORES ---
+        const totalAnterior = estatisticasCompradores.get(clienteId) || 0;
+        estatisticasCompradores.set(clienteId, totalAnterior + valorPago);
+
+        const ranking = Array.from(estatisticasCompradores.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+        let textoRanking = "🏆 **TOP COMPRADORES DA ANBU** 🏆\n\n";
+        const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+
+        ranking.forEach(([id, valor], index) => {
+            textoRanking += `${medalhas[index]} <@${id}> — **R$ ${valor.toFixed(2)}**\n`;
+        });
+
+        const canalTop = await guild.channels.fetch(CANAL_TOP_COMPRADORES_ID);
+        if (canalTop) {
+            await canalTop.send({ 
+                embeds: [new EmbedBuilder().setTitle('🏆 Ranking de Clientes').setDescription(textoRanking).setColor(0xFFD700)] 
+            });
+        }
+    } catch (err) {
+        console.error('Erro ao aprovar venda:', err);
+    }
+}
