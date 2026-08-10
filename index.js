@@ -59,6 +59,7 @@ const client = new Client({
 });
 
 const DB_FILE = './produtos.json';
+const ARQUIVO_MOEDAS = './moedas.json';
 const cuponsValidos = new Map([
     ['CONVITE10', { descontoPorcentagem: 10 }],
     ['BEMVINDO5', { descontoPorcentagem: 5 }],
@@ -69,6 +70,41 @@ const cuponsAplicados = new Map();
 const vendasAprovadas = new Set();
 const invitesCache = new Map();
 const convitesMembros = new Map();
+const CASA_ID = '__casa__';
+let carteiras = {};
+
+if (fs.existsSync(ARQUIVO_MOEDAS)) {
+    try {
+        const dadosMoedas = JSON.parse(fs.readFileSync(ARQUIVO_MOEDAS, 'utf8'));
+        carteiras = dadosMoedas && typeof dadosMoedas === 'object' ? dadosMoedas : {};
+    } catch (error) {
+        console.error('Não foi possível carregar moedas.json:', error.message);
+    }
+}
+
+function salvarMoedas() {
+    fs.writeFileSync(ARQUIVO_MOEDAS, `${JSON.stringify(carteiras, null, 2)}\n`);
+}
+
+function getSaldo(userId) {
+    if (!carteiras[userId]) {
+        carteiras[userId] = { moedas: 0 };
+    }
+
+    return Number(carteiras[userId].moedas) || 0;
+}
+
+function adicionarMoedas(userId, quantidade) {
+    const saldoAtual = getSaldo(userId);
+    carteiras[userId].moedas = saldoAtual + quantidade;
+    salvarMoedas();
+}
+
+function removerMoedas(userId, quantidade) {
+    const saldoAtual = getSaldo(userId);
+    carteiras[userId].moedas = Math.max(0, saldoAtual - quantidade);
+    salvarMoedas();
+}
 
 function carregarProdutos() {
     if (!fs.existsSync(DB_FILE)) {
@@ -405,6 +441,141 @@ client.on('messageCreate', async (message) => {
     );
     const [command] = message.content.trim().split(/\s+/);
     const commandName = command?.toLowerCase();
+
+    if (commandName === '!saldo') {
+        const saldo = getSaldo(message.author.id);
+        return message.reply(
+            `💳 Seu saldo atual na Anbu Shop é de: **${saldo.toLocaleString('pt-BR')} moedas**.`,
+        );
+    }
+
+    if (commandName === '!darmoedas') {
+        if (!isAdmin) return message.reply('❌ Você não tem permissão para usar este comando.');
+
+        const mencao = message.mentions.users.first();
+        const quantidade = Number(message.content.trim().split(/\s+/)[2]);
+        if (!mencao || !Number.isSafeInteger(quantidade) || quantidade <= 0) {
+            return message.reply('⚠️ Use o formato correto: `!darmoedas @usuario 50000`');
+        }
+
+        adicionarMoedas(mencao.id, quantidade);
+        return message.reply(
+            `✅ Adicionadas **${quantidade.toLocaleString('pt-BR')} moedas** para ${mencao}. Saldo atualizado!`,
+        );
+    }
+
+    if (commandName === '!apostar') {
+        const valorAposta = Number(message.content.trim().split(/\s+/)[1]);
+        if (!Number.isSafeInteger(valorAposta) || valorAposta <= 0) {
+            return message.reply(
+                '⚠️ Digite um valor inteiro válido para apostar! Ex: `!apostar 1000`',
+            );
+        }
+
+        const saldoUsuario = getSaldo(message.author.id);
+        if (saldoUsuario < valorAposta) {
+            return message.reply(
+                `❌ Você não tem moedas suficientes! Seu saldo atual é de **${saldoUsuario.toLocaleString('pt-BR')} moedas**.`,
+            );
+        }
+
+        removerMoedas(message.author.id, valorAposta);
+
+        const embedAposta = new EmbedBuilder()
+            .setTitle('🪙 MESA DE APOSTAS - COINFLIP')
+            .setDescription(
+                `**${message.author}** abriu uma aposta de **${valorAposta.toLocaleString('pt-BR')} moedas**!\n\n` +
+                '*Clique no botão abaixo para aceitar o desafio e apostar contra ele!*',
+            )
+            .setColor('#f39c12')
+            .setTimestamp();
+        const btnAceitar = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`aceitar_aposta_${message.author.id}_${valorAposta}`)
+                .setLabel('Aceitar Aposta 🎮')
+                .setStyle(ButtonStyle.Success),
+        );
+
+        let msgAposta;
+        try {
+            msgAposta = await message.reply({
+                embeds: [embedAposta],
+                components: [btnAceitar],
+            });
+        } catch (error) {
+            adicionarMoedas(message.author.id, valorAposta);
+            console.error('Não foi possível publicar a aposta:', error.message);
+            return;
+        }
+
+        let apostaFinalizada = false;
+        const collector = msgAposta.createMessageComponentCollector({ time: 60000 });
+
+        collector.on('collect', async (interaction) => {
+            if (apostaFinalizada) return;
+
+            if (interaction.user.id === message.author.id) {
+                return interaction.reply({
+                    content: '❌ Você não pode aceitar a sua própria aposta. Aguarde um desafiante!',
+                    ephemeral: true,
+                });
+            }
+
+            const saldoOponente = getSaldo(interaction.user.id);
+            if (saldoOponente < valorAposta) {
+                return interaction.reply({
+                    content: `❌ Você não tem ${valorAposta.toLocaleString('pt-BR')} moedas para cobrir essa aposta!`,
+                    ephemeral: true,
+                });
+            }
+
+            apostaFinalizada = true;
+            removerMoedas(interaction.user.id, valorAposta);
+
+            const poteTotal = valorAposta * 2;
+            const taxaCasa = Math.floor(poteTotal * 0.1);
+            const premioFinal = poteTotal - taxaCasa;
+            const vencedor = Math.random() < 0.5 ? message.author : interaction.user;
+            const perdedor = vencedor.id === message.author.id ? interaction.user : message.author;
+
+            adicionarMoedas(CASA_ID, taxaCasa);
+            adicionarMoedas(vencedor.id, premioFinal);
+
+            const embedResultado = new EmbedBuilder()
+                .setTitle('🎲 RESULTADO DO COINFLIP')
+                .setDescription(
+                    `🏆 **Vencedor:** ${vencedor}\n` +
+                    `💸 **Prêmio Líquido:** ${premioFinal.toLocaleString('pt-BR')} moedas\n` +
+                    `🏛️ **Taxa da Casa (10%):** ${taxaCasa.toLocaleString('pt-BR')} moedas guardadas!\n\n` +
+                    `*${perdedor} perdeu a rodada. Boa sorte na próxima!*`,
+                )
+                .setColor('#2ecc71')
+                .setTimestamp();
+
+            collector.stop('accepted');
+            await interaction.update({ embeds: [embedResultado], components: [] });
+        });
+
+        collector.on('end', async (_collected, reason) => {
+            if (apostaFinalizada || reason !== 'time') return;
+
+            apostaFinalizada = true;
+            adicionarMoedas(message.author.id, valorAposta);
+
+            const embedExpirada = new EmbedBuilder()
+                .setTitle('⌛ APOSTA EXPIRADA')
+                .setDescription(
+                    `Ninguém aceitou a aposta de **${valorAposta.toLocaleString('pt-BR')} moedas** em 60 segundos.\n` +
+                    'O valor foi devolvido ao saldo do criador.',
+                )
+                .setColor('#95a5a6')
+                .setTimestamp();
+
+            await msgAposta.edit({ embeds: [embedExpirada], components: [] }).catch(() => {});
+        });
+
+        return;
+    }
 
     if (commandName === '!setpix') {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
