@@ -1,0 +1,186 @@
+// ==================== 1. COINFLIP CORRIGIDO (50% / 50% com Suspense) ====================
+if (message.content.startsWith('!apostar')) {
+  const args = message.content.split(' ');
+  const valorAposta = parseInt(args[1]);
+
+  if (!valorAposta || valorAposta <= 0) {
+    return message.reply('⚠️ Use: `!apostar [valor]` (Ex: `!apostar 1000`)');
+  }
+
+  const saldoUser = getSaldo(message.author.id);
+  if (saldoUser < valorAposta) {
+    return message.reply(`❌ Saldo insuficiente! Você tem **${saldoUser} moedas**.`);
+  }
+
+  removerMoedas(message.author.id, valorAposta);
+
+  const embed = new EmbedBuilder()
+    .setTitle('🪙 MESA DE COINFLIP - ANBU SHOP')
+    .setDescription(`**${message.author}** abriu uma mesa de apostas valendo **${valorAposta} moedas**!\n\n*Clique no botão abaixo para aceitar o duelo.*`)
+    .setColor('#f39c12');
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`cf_${message.author.id}_${valorAposta}`).setLabel('Aceitar Duelo ⚔️').setStyle(ButtonStyle.Success)
+  );
+
+  const msg = await message.reply({ embeds: [embed], components: [row] });
+  const collector = msg.createMessageComponentCollector({ time: 60000 });
+
+  collector.on('collect', async i => {
+    if (i.user.id === message.author.id) {
+      return i.reply({ content: '❌ Você não pode aceitar sua própria aposta!', ephemeral: true });
+    }
+
+    const saldoOponente = getSaldo(i.user.id);
+    if (saldoOponente < valorAposta) {
+      return i.reply({ content: `❌ Você não tem ${valorAposta} moedas!`, ephemeral: true });
+    }
+
+    removerMoedas(i.user.id, valorAposta);
+    await i.update({ content: '🎲 **Girando a moeda no ar... Aguarde o resultado!**', embeds: [], components: [] });
+
+    // Efeito de suspense de 3 segundos
+    setTimeout(async () => {
+      const poteTotal = valorAposta * 2;
+      const taxaCasa = Math.floor(poteTotal * 0.10); // 10% da casa
+      const premioFinal = poteTotal - taxaCasa;
+
+      // 50% / 50% real usando Math.random()
+      const vencedor = Math.random() < 0.5 ? message.author : i.user;
+      adicionarMoedas(vencedor.id, premioFinal);
+
+      const resEmbed = new EmbedBuilder()
+        .setTitle('🪙 RESULTADO DO COINFLIP')
+        .setDescription(`🏆 **Vencedor:** ${vencedor}\n💸 **Prêmio Líquido:** ${premioFinal.toLocaleString()} moedas\n🏛️ **Taxa da Casa (10%):** ${taxaCasa.toLocaleString()} moedas\n\n*Boa sorte na próxima vez ao perdedor!*`)
+        .setColor('#2ecc71');
+
+      await msg.edit({ content: null, embeds: [resEmbed] });
+    }, 3000);
+
+    collector.stop();
+  });
+}
+
+// ==================== 2. JOGO MAIOR OU MENOR (High / Low) ====================
+if (message.content.startsWith('!altobaixo')) {
+  const args = message.content.split(' ');
+  const aposta = parseInt(args[1]);
+
+  if (!aposta || aposta <= 0) return message.reply('⚠️ Use: `!altobaixo [valor]`');
+  if (getSaldo(message.author.id) < aposta) return message.reply('❌ Você não tem moedas suficientes!');
+
+  removerMoedas(message.author.id, aposta);
+
+  // Sorteia número base de 1 a 10
+  const numeroBase = Math.floor(Math.random() * 10) + 1;
+
+  const embed = new EmbedBuilder()
+    .setTitle('📊 JOGO: MAIOR OU MENOR')
+    .setDescription(`O número base da mesa é: **${numeroBase}**\n\nO próximo número será **Maior** ou **Menor**?\n*Faça sua escolha nos botões abaixo!*`)
+    .setColor('#3498db');
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('hl_maior').setLabel('📈 Maior (6-10)').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId('hl_menor').setLabel('📉 Menor (1-5)').setStyle(ButtonStyle.Danger)
+  );
+
+  const msg = await message.reply({ embeds: [embed], components: [row] });
+  const filter = i => i.user.id === message.author.id;
+  const collector = msg.createMessageComponentCollector({ filter, time: 20000, max: 1 });
+
+  collector.on('collect', async i => {
+    const numeroSorteado = Math.floor(Math.random() * 10) + 1;
+    let ganhou = false;
+
+    if (i.customId === 'hl_maior' && numeroSorteado > numeroBase) ganhou = true;
+    if (i.customId === 'hl_menor' && numeroSorteado < numeroBase) ganhou = true;
+
+    let premio = 0;
+    if (ganhou) {
+      premio = Math.floor(aposta * 1.8); // paga 1.8x já descontando a margem da casa
+      adicionarMoedas(message.author.id, premio);
+    }
+
+    const resEmbed = new EmbedBuilder()
+      .setTitle(ganhou ? '🎉 VOCÊ VENCEU!' : '💀 VOCÊ PERDEU!')
+      .setDescription(`🔢 Número Base: **${numeroBase}**\n🎯 Número Sorteado: **${numeroSorteado}**\n\n${ganhou ? `💸 Você faturou **+${premio.toLocaleString()} moedas**!` : `💸 Você perdeu **-${aposta.toLocaleString()} moedas** para a casa.`}`)
+      .setColor(ganhou ? '#2ecc71' : '#e74c3c');
+
+    await i.update({ embeds: [resEmbed], components: [] });
+  });
+}
+
+// ==================== 3. JOGO DO CRASH (Retire antes de estourar!) ====================
+if (message.content.startsWith('!crash')) {
+  const args = message.content.split(' ');
+  const aposta = parseInt(args[1]);
+
+  if (!aposta || aposta <= 0) return message.reply('⚠️ Use: `!crash [valor]`');
+  if (getSaldo(message.author.id) < aposta) return message.reply('❌ Saldo insuficiente!');
+
+  removerMoedas(message.author.id, aposta);
+
+  let multiplicador = 1.00;
+  // O crash trava aleatoriamente entre 1.10x e 3.50x
+  const pontoCrash = parseFloat((Math.random() * (3.5 - 1.1) + 1.1).toFixed(2));
+  let resgatado = false;
+
+  const embed = new EmbedBuilder()
+    .setTitle('🚀 CRASH DA ANBU SHOP')
+    .setDescription(`Multiplicador atual: **${multiplicador.toFixed(2)}x**\n\n*Clique no botão abaixo para retirar suas moedas antes que o foguete explode!*`)
+    .setColor('#9b59b6');
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('btn_retirar').setLabel('💰 RETIRAR LUCRO').setStyle(ButtonStyle.Success)
+  );
+
+  const msg = await message.reply({ embeds: [embed], components: [row] });
+  const filter = i => i.user.id === message.author.id;
+  const collector = msg.createMessageComponentCollector({ filter, time: 10000 });
+
+  // Loop do gráfico subindo a cada 1 segundo
+  const intervalo = setInterval(async () => {
+    if (resgatado || multiplicador >= pontoCrash) {
+      clearInterval(intervalo);
+      return;
+    }
+
+    multiplicador = parseFloat((multiplicador + 0.25).toFixed(2));
+
+    if (multiplicador >= pontoCrash) {
+      // Estourou!
+      clearInterval(intervalo);
+      if (!resgatado) {
+        const failEmbed = new EmbedBuilder()
+          .setTitle('💥 CRASH! EXPLODIU!')
+          .setDescription(`O foguete explodiu em **${pontoCrash}x**!\nVocê perdeu sua aposta de **${aposta.toLocaleString()} moedas** para a casa.`)
+          .setColor('#e74c3c');
+        await msg.edit({ embeds: [failEmbed], components: [] }).catch(() => {});
+      }
+      return;
+    }
+
+    const atualEmbed = new EmbedBuilder()
+      .setTitle('🚀 CRASH DA ANBU SHOP (Subindo...)')
+      .setDescription(`Multiplicador atual: **${multiplicador.toFixed(2)}x**\nLucro potencial: **${Math.floor(aposta * multiplicador)} moedas**\n\n*Corra e clique em retirar!*`)
+      .setColor('#9b59b6');
+
+    await msg.edit({ embeds: [atualEmbed], components: [row] }).catch(() => {});
+  }, 1000);
+
+  collector.on('collect', async i => {
+    if (resgatado || multiplicador >= pontoCrash) return;
+    resgatado = true;
+    clearInterval(intervalo);
+
+    const lucroFinal = Math.floor(aposta * multiplicador);
+    adicionarMoedas(message.author.id, lucroFinal);
+
+    const winEmbed = new EmbedBuilder()
+      .setTitle('🎯 SAQUE REALIZADO COM SUCESSO!')
+      .setDescription(`Você retirou em **${multiplicador.toFixed(2)}x**!\n💰 Ganhou um total de **${lucroFinal.toLocaleString()} moedas**.`)
+      .setColor('#2ecc71');
+
+    await i.update({ embeds: [winEmbed], components: [] });
+  });
+}
