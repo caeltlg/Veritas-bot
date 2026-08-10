@@ -184,6 +184,32 @@ function valorComDesconto(preco, descontoPorcentagem = 0) {
     return valorNumerico(preco) * (1 - descontoPorcentagem / 100);
 }
 
+function ehProdutoCoin(produto) {
+    return (
+        produto?.tipo === 'coin' ||
+        String(produto?.categoria || '').trim().toLowerCase() === 'moedas'
+    );
+}
+
+function obterQuantidadeCoins(produto) {
+    const quantidadeCadastrada = Number(produto?.quantidadeCoins);
+    if (Number.isSafeInteger(quantidadeCadastrada) && quantidadeCadastrada > 0) {
+        return quantidadeCadastrada;
+    }
+
+    const correspondencia = String(produto?.nome || '').match(
+        /([\d.,]+)\s*(?:anbu\s*)?coins?/i,
+    );
+    if (!correspondencia) return 0;
+
+    const quantidade = Number(
+        correspondencia[1].includes('.')
+            ? correspondencia[1].replace(/\./g, '').replace(',', '.')
+            : correspondencia[1].replace(',', '.'),
+    );
+    return Number.isSafeInteger(quantidade) && quantidade > 0 ? quantidade : 0;
+}
+
 async function atualizarRankingMagnatas(discordClient) {
     try {
         const canal = await discordClient.channels.fetch(CANAL_RANKING_ID).catch(() => null);
@@ -379,6 +405,36 @@ const slashCommands = [
         )
         .addStringOption((option) =>
             option.setName('entrega').setDescription('Conteúdo entregue após aprovação').setRequired(false)
+        ),
+    new SlashCommandBuilder()
+        .setName('addcoin')
+        .setDescription('Cadastra um pacote de coins na loja de moedas')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option
+                .setName('nome')
+                .setDescription('Ex: 5.000 Anbu Coins')
+                .setRequired(true)
+        )
+        .addNumberOption((option) =>
+            option
+                .setName('preco')
+                .setDescription('Preço em R$ (Ex: 5.00)')
+                .setMinValue(0.01)
+                .setRequired(true)
+        )
+        .addIntegerOption((option) =>
+            option
+                .setName('quantidade')
+                .setDescription('Quantidade de moedas que o cliente recebe (Ex: 5000)')
+                .setMinValue(1)
+                .setRequired(true)
+        )
+        .addStringOption((option) =>
+            option
+                .setName('descricao')
+                .setDescription('Descrição do pacote')
+                .setRequired(true)
         ),
     new SlashCommandBuilder()
         .setName('delproduto')
@@ -1209,6 +1265,9 @@ client.on('messageCreate', async (message) => {
             .setDescription(
                 `📄 **Descrição**\n${topicos}\n\n` +
                 `💰 **Preço**\n${produto.preco}\n\n` +
+                (ehProdutoCoin(produto)
+                    ? `🪙 **Coins entregues**\n${obterQuantidadeCoins(produto).toLocaleString('pt-BR')}\n\n`
+                    : '') +
                 `♾️ **Estoque**\n${produto.estoque === null || produto.estoque === undefined ? '♾️ Infinito' : produto.estoque}`
             );
 
@@ -1382,6 +1441,30 @@ client.on('interactionCreate', async (interaction) => {
             );
         }
 
+        if (interaction.commandName === 'addcoin') {
+            const quantidadeCoins = interaction.options.getInteger('quantidade', true);
+            const preco = interaction.options.getNumber('preco', true);
+            const produto = {
+                id: `coin_${Date.now()}`,
+                tipo: 'coin',
+                categoria: 'Moedas',
+                nome: interaction.options.getString('nome', true),
+                preco: preco.toFixed(2),
+                quantidadeCoins,
+                descricao: interaction.options.getString('descricao', true),
+                media: null,
+                entrega: 'Coins creditadas automaticamente após a aprovação do pagamento.',
+                estoque: null,
+            };
+
+            const produtos = carregarProdutos();
+            produtos.push(produto);
+            salvarProdutos(produtos);
+            return interaction.reply(
+                `✅ Pacote de **${quantidadeCoins.toLocaleString('pt-BR')} Coins** cadastrado como **${produto.nome}** por **R$ ${preco.toFixed(2).replace('.', ',')}**.`,
+            );
+        }
+
         if (interaction.commandName === 'delproduto') {
             const nomeOuId = interaction.options.getString('produto', true);
             const produtos = carregarProdutos();
@@ -1487,6 +1570,9 @@ client.on('interactionCreate', async (interaction) => {
                 .setDescription(
                     `📄 **Descrição**\n${topicos}\n\n` +
                     `💰 **Preço**\n${produto.preco}\n\n` +
+                (ehProdutoCoin(produto)
+                    ? `🪙 **Coins entregues**\n${obterQuantidadeCoins(produto).toLocaleString('pt-BR')}\n\n`
+                    : '') +
                     `♾️ **Estoque**\n${produto.estoque === null || produto.estoque === undefined ? '♾️ Infinito' : produto.estoque}`
                 );
 
@@ -1715,11 +1801,37 @@ client.on('interactionCreate', async (interaction) => {
         const cupom = cuponsAplicados.get(`${interaction.channelId}:${userId}`);
         const descontoPorcentagem = cupom?.descontoPorcentagem || 0;
         const valorPago = valorComDesconto(produto.preco, descontoPorcentagem);
+        const produtoCoin = ehProdutoCoin(produto);
+        const quantidadeCoins = produtoCoin ? obterQuantidadeCoins(produto) : 0;
+
+        if (produtoCoin && quantidadeCoins <= 0) {
+            return interaction.reply({
+                content: '❌ Este pacote de coins está configurado incorretamente. Venda não aprovada.',
+                ephemeral: true,
+            });
+        }
 
         vendasAprovadas.add(vendaKey);
         if (produto.estoque !== null && produto.estoque !== undefined) {
             produto.estoque -= 1;
             salvarProdutos(produtos);
+        }
+
+        if (produtoCoin) {
+            adicionarMoedas(userId, quantidadeCoins);
+            await atualizarRankingMagnatas(client);
+            cuponsAplicados.delete(`${interaction.channelId}:${userId}`);
+
+            await interaction.reply({
+                content:
+                    `✅ Venda aprovada! **${quantidadeCoins.toLocaleString('pt-BR')} Coins** ` +
+                    `foram creditadas para <@${userId}>.`,
+            });
+
+            setTimeout(() => {
+                interaction.channel?.delete().catch(() => {});
+            }, 10000);
+            return;
         }
 
         const targetUser = await client.users.fetch(userId).catch(() => null);
