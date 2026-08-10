@@ -248,16 +248,6 @@
     "estoque": null
   },
   {
-    "id": "prod_1786325447840",
-    "categoria": "Moedas",
-    "nome": "5.000 Anbu Coins",
-    "preco": "5,00",
-    "descricao": "🎰 Pacote Inicial! 5.000 moedas virtuais para apostar e jogar nos minigames do servidor.",
-    "media": null,
-    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
-    "estoque": null
-  },
-  {
     "id": "prod_1786325548507",
     "categoria": "Moedas",
     "nome": "12.000 Anbu Coins",
@@ -295,6 +285,66 @@
     "descricao": "🔥 Economize R$ 2! Leve 12.000 moedas (+2.000 bônus) para apostar alto no Crash e Coinflip.",
     "media": null,
     "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
+  },
+  {
+    "id": "coin_1786329847645",
+    "tipo": "coin",
+    "categoria": "Moedas",
+    "nome": "5.000 Anbu Coins",
+    "preco": "5.00",
+    "quantidadeCoins": 5000,
+    "descricao": "🎰 Pacote Inicial! 5.000 moedas virtuais para apostar e jogar nos minigames.",
+    "media": null,
+    "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
+    "estoque": null
+  },
+  {
+    "id": "coin_1786330013126",
+    "tipo": "coin",
+    "categoria": "Moedas",
+    "nome": "Anbu Coins (5k)",
+    "preco": "5.00",
+    "quantidadeCoins": 5000,
+    "descricao": "🎰 Pacote Inicial! 5.000 moedas virtuais para apostar e jogar nos minigames do servidor.",
+    "media": null,
+    "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
+    "estoque": null
+  },
+  {
+    "id": "coin_1786330027776",
+    "tipo": "coin",
+    "categoria": "Moedas",
+    "nome": "Anbu Coins (12k)",
+    "preco": "10.00",
+    "quantidadeCoins": 12000,
+    "descricao": "🔥 Economize R$ 2! Leve 12.000 moedas (+2.000 bônus) para apostar alto no Crash e Coinflip.",
+    "media": null,
+    "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
+    "estoque": null
+  },
+  {
+    "id": "coin_1786330042384",
+    "tipo": "coin",
+    "categoria": "Moedas",
+    "nome": "Anbu Coins (35k)",
+    "preco": "25.00",
+    "quantidadeCoins": 35000,
+    "descricao": "⚡ Pacote dos Apostadores! Leve 35.000 moedas (+10.000 bônus) com o melhor rendimento.",
+    "media": null,
+    "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
+    "estoque": null
+  },
+  {
+    "id": "coin_1786330060306",
+    "tipo": "coin",
+    "categoria": "Moedas",
+    "nome": "Anbu Coins (80k)",
+    "preco": "50.00",
+    "quantidadeCoins": 80000,
+    "descricao": "👑 Pacote Recomendado! 80.000 moedas (+30.000 bônus) para dominar o topo do ranking de magnatas.",
+    "media": null,
+    "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
     "estoque": null
   }
 ]

@@ -1,0 +1,76 @@
+// Banco de dados/Objeto simples de cupons em memória (ou json)
+const cupons = {};
+
+// ==================== COMANDO PARA CRIAR CUPOM ====================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'criarcupom') {
+    // Permissão apenas para administradores
+    if (!interaction.member.permissions.has('Administrator')) {
+      return interaction.reply({ content: '❌ Você não tem permissão para usar este comando.', ephemeral: true });
+    }
+
+    const codigo = interaction.options.getString('codigo').toUpperCase();
+    const desconto = interaction.options.getInteger('desconto');
+    const diasValidade = interaction.options.getInteger('dias');
+
+    // Calcula a data de expiração (Data atual + dias definidos)
+    const dataExpiracao = new Date();
+    dataExpiracao.setDate(dataExpiracao.getDate() + diasValidade);
+
+    cupons[codigo] = {
+      desconto: desconto, // Ex: 5 (%)
+      expiraEm: dataExpiracao.getTime() // Timestamp de expiração
+    };
+
+    const embedCupom = new EmbedBuilder()
+      .setTitle('🎟️ CUPOM CRIADO COM SUCESSO')
+      .addFields(
+        { name: '🔑 Código:', value: `\`${codigo}\``, inline: true },
+        { name: '📉 Desconto:', value: `**${desconto}%**`, inline: true },
+        { name: '⏳ Validade:', value: `**${diasValidade} dias** (Expira em: <t:${Math.floor(dataExpiracao.getTime() / 1000)}:R>)`, inline: false }
+      )
+      .setColor('#2ecc71')
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embedCupom] });
+  }
+});
+
+// ==================== LÓGICA DE VALIDAÇÃO DO CUPOM NO CARRINHO ====================
+function aplicarCupom(codigoInformado, precoOriginal) {
+  const cupom = cupons[codigoInformado.toUpperCase()];
+
+  // 1. Verifica se o cupom existe
+  if (!cupom) {
+    return { sucesso: false, mensagem: '❌ Cupom inválido ou inexistente.' };
+  }
+
+  // 2. Verifica se o cupom expirou
+  const agora = new Date().getTime();
+  if (agora > cupom.expiraEm) {
+    return { sucesso: false, mensagem: '⏰ Este cupom já expirou!' };
+  }
+
+  // 3. Trava do valor mínimo (R$ 7,00)
+  if (precoOriginal <= 7.00) {
+    return { sucesso: false, mensagem: '⚠️ Cupons não podem ser aplicados em produtos de R$ 7,00 ou menos.' };
+  }
+
+  // 4. Calcula o desconto de 5%
+  const valorDesconto = precoOriginal * (cupom.desconto / 100);
+  let precoFinal = precoOriginal - valorDesconto;
+
+  // Garantia do piso de R$ 7,00
+  if (precoFinal < 7.00) {
+    precoFinal = 7.00;
+  }
+
+  return {
+    sucesso: true,
+    precoFinal: precoFinal,
+    descontoAplicado: cupom.desconto,
+    mensagem: `🎉 Cupom **${codigoInformado}** de ${cupom.desconto}% aplicado com sucesso!`
+  };
+}
