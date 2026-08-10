@@ -1,0 +1,106 @@
+const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+
+const criarcupomData = new SlashCommandBuilder()
+  .setName('criarcupom')
+  .setDescription('Cria um cupom de desconto temporário para a loja')
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+  .addStringOption(option =>
+    option.setName('codigo')
+      .setDescription('Código do cupom (Ex: FREECUPONS)')
+      .setRequired(true))
+  .addIntegerOption(option =>
+    option.setName('desconto')
+      .setDescription('Porcentagem de desconto (Ex: 5 para 5%)')
+      .setRequired(true))
+  .addIntegerOption(option =>
+    option.setName('dias')
+      .setDescription('Validade em dias (Ex: 5)')
+      .setRequired(true));
+const fs = require('fs');
+
+// Função para carregar os cupons salvos no arquivo
+let cupons = {};
+if (fs.existsSync('./cupons.json')) {
+  cupons = JSON.parse(fs.readFileSync('./cupons.json', 'utf8'));
+}
+
+function salvarCupons() {
+  fs.writeFileSync('./cupons.json', JSON.stringify(cupons, null, 2));
+}
+
+// ==================== COMANDO /CRIARCUPOM ====================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === 'criarcupom') {
+    if (!interaction.member.permissions.has('Administrator')) {
+      return interaction.reply({ content: '❌ Apenas administradores podem criar cupons.', ephemeral: true });
+    }
+
+    const codigo = interaction.options.getString('codigo').toUpperCase();
+    const desconto = interaction.options.getInteger('desconto');
+    const diasValidade = interaction.options.getInteger('dias');
+
+    // Calcula timestamp de expiração (Data atual + dias)
+    const dataExpiracao = new Date();
+    dataExpiracao.setDate(dataExpiracao.getDate() + diasValidade);
+
+    cupons[codigo] = {
+      desconto: desconto,
+      expiraEm: dataExpiracao.getTime()
+    };
+
+    salvarCupons(); // Salva no arquivo cupons.json
+
+    const embedCupom = new EmbedBuilder()
+      .setTitle('🎟️ CUPOM CRIADO COM SUCESSO')
+      .addFields(
+        { name: '🔑 Código:', value: `\`${codigo}\``, inline: true },
+        { name: '📉 Desconto:', value: `**${desconto}%**`, inline: true },
+        { name: '⏳ Validade:', value: `**${diasValidade} dias** (Expira <t:${Math.floor(dataExpiracao.getTime() / 1000)}:R>)`, inline: false }
+      )
+      .setColor('#2ecc71')
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embedCupom] });
+  }
+});
+
+// ==================== LÓGICA DE APLICAÇÃO NO CARRINHO ====================
+function aplicarCupomNoCarrinho(codigoInformado, precoOriginal) {
+  const codigoLimpo = codigoInformado.trim().toUpperCase();
+  const cupom = cupons[codigoLimpo];
+
+  // 1. Verifica existência
+  if (!cupom) {
+    return { sucesso: false, mensagem: '❌ Cupom inválido ou não encontrado.' };
+  }
+
+  // 2. Verifica se expirou
+  const agora = new Date().getTime();
+  if (agora > cupom.expiraEm) {
+    return { sucesso: false, mensagem: '⏰ Este cupom já expirou!' };
+  }
+
+  // 3. Nova trava do valor mínimo (R$ 7,50)
+  if (precoOriginal <= 7.50) {
+    return { sucesso: false, mensagem: '⚠️ Cupons não podem ser aplicados em produtos de R$ 7,50 ou menos.' };
+  }
+
+  // 4. Cálculo do desconto
+  const valorDesconto = precoOriginal * (cupom.desconto / 100);
+  let precoFinal = precoOriginal - valorDesconto;
+
+  // Garantia do piso de R$ 7,50
+  if (precoFinal < 7.50) {
+    precoFinal = 7.50;
+  }
+
+  return {
+    sucesso: true,
+    precoFinal: precoFinal,
+    descontoAplicado: cupom.desconto,
+    mensagem: `🎉 Cupom **${codigoLimpo}** de ${cupom.desconto}% aplicado! Valor ajustado para **R$ ${precoFinal.toFixed(2)}**.`
+  };
+}
+
