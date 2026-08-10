@@ -465,6 +465,10 @@ client.on('messageCreate', async (message) => {
     }
 
     if (commandName === '!apostar') {
+        console.log(
+            `[COMANDO] !apostar chamado por ${message.author.tag} (${message.author.id}) ` +
+            `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
+        );
         const valorAposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(valorAposta) || valorAposta <= 0) {
             return message.reply(
@@ -586,6 +590,10 @@ client.on('messageCreate', async (message) => {
     }
 
     if (commandName === '!altobaixo') {
+        console.log(
+            `[COMANDO] !altobaixo chamado por ${message.author.tag} (${message.author.id}) ` +
+            `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
+        );
         const aposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(aposta) || aposta <= 0) {
             return message.reply('⚠️ Use: `!altobaixo [valor]`');
@@ -682,6 +690,10 @@ client.on('messageCreate', async (message) => {
     }
 
     if (commandName === '!crash') {
+        console.log(
+            `[COMANDO] !crash chamado por ${message.author.tag} (${message.author.id}) ` +
+            `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
+        );
         const aposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(aposta) || aposta <= 0) {
             return message.reply('⚠️ Use: `!crash [valor]`');
