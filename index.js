@@ -32,6 +32,8 @@ const HTTP_PORT = 3000;
 const CANAL_STATUS_ID = '1536057245958275094';
 const CANAL_VENDAS_ID = '1536059223211769926';
 const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
+const CANAL_APOSTAS_ID = '1536179345364619304';
+const CANAL_RANKING_ID = '1536179623447105536';
 const CARGO_VIP_ID = '1536067928464826368';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
@@ -73,6 +75,8 @@ const convitesMembros = new Map();
 const cooldownDaily = new Map();
 const CASA_ID = '__casa__';
 let carteiras = {};
+let rankingUpdateTimer = null;
+let rankingUpdateQueued = false;
 
 if (fs.existsSync(ARQUIVO_MOEDAS)) {
     try {
@@ -85,6 +89,7 @@ if (fs.existsSync(ARQUIVO_MOEDAS)) {
 
 function salvarMoedas() {
     fs.writeFileSync(ARQUIVO_MOEDAS, `${JSON.stringify(carteiras, null, 2)}\n`);
+    solicitarAtualizacaoRanking();
 }
 
 function getSaldo(userId) {
@@ -168,6 +173,62 @@ function chaveCupom(interaction) {
 
 function valorComDesconto(preco, descontoPorcentagem = 0) {
     return valorNumerico(preco) * (1 - descontoPorcentagem / 100);
+}
+
+async function atualizarRankingMagnatas(discordClient) {
+    try {
+        const canal = await discordClient.channels.fetch(CANAL_RANKING_ID).catch(() => null);
+        if (!canal?.isTextBased() || !discordClient.user) return;
+
+        const ordenados = Object.entries(carteiras)
+            .filter(([id, dados]) => id !== CASA_ID && Number.isFinite(Number(dados?.moedas)))
+            .map(([id, dados]) => ({ id, moedas: Number(dados.moedas) }))
+            .sort((a, b) => b.moedas - a.moedas)
+            .slice(0, 10);
+
+        if (ordenados.length === 0) return;
+
+        const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+        const textoRanking = ordenados
+            .map(
+                (item, index) =>
+                    `${medalhas[index]} <@${item.id}> — **${item.moedas.toLocaleString('pt-BR')} Anbu Coins**`,
+            )
+            .join('\n');
+
+        const embedRanking = new EmbedBuilder()
+            .setTitle('🏆 RANKING DOS MAGNATAS - TOP 10')
+            .setDescription(
+                `Estes são os membros mais ricos do servidor atualmente:\n\n${textoRanking}`,
+            )
+            .setColor('#f1c40f')
+            .setFooter({ text: 'O ranking atualiza automaticamente a cada aposta ou recarga.' })
+            .setTimestamp();
+
+        const mensagens = await canal.messages.fetch({ limit: 10 });
+        const msgBot = mensagens.find((mensagem) => mensagem.author.id === discordClient.user.id);
+
+        if (msgBot) {
+            await msgBot.edit({ embeds: [embedRanking] });
+        } else {
+            await canal.send({ embeds: [embedRanking] });
+        }
+    } catch (error) {
+        console.error('Erro ao atualizar o ranking dos magnatas:', error.message);
+    }
+}
+
+function solicitarAtualizacaoRanking() {
+    rankingUpdateQueued = true;
+    if (rankingUpdateTimer) return;
+
+    rankingUpdateTimer = setTimeout(async () => {
+        rankingUpdateTimer = null;
+        if (!rankingUpdateQueued) return;
+
+        rankingUpdateQueued = false;
+        await atualizarRankingMagnatas(client);
+    }, 500);
 }
 
 async function atualizarRanking(guild) {
@@ -403,6 +464,8 @@ client.once('ready', async () => {
     for (const guild of client.guilds.cache.values()) {
         await sincronizarConvites(guild);
     }
+
+    await atualizarRankingMagnatas(client);
 });
 
 let encerrando = false;
@@ -442,6 +505,16 @@ client.on('messageCreate', async (message) => {
     );
     const [command] = message.content.trim().split(/\s+/);
     const commandName = command?.toLowerCase();
+    const comandosJogos = ['!apostar', '!crash', '!altobaixo'];
+    const ehComandoJogo = comandosJogos.some((comandoJogo) =>
+        message.content.trim().toLowerCase().startsWith(comandoJogo),
+    );
+
+    if (ehComandoJogo && message.channel.id !== CANAL_APOSTAS_ID) {
+        return message.reply(
+            `⚠️ As apostas só são permitidas no canal <#${CANAL_APOSTAS_ID}>!`,
+        );
+    }
 
     if (commandName === '!saldo') {
         const saldo = getSaldo(message.author.id);

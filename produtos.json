@@ -246,5 +246,55 @@
     "media": null,
     "entrega": "Obrigado pelo interesse! Mande a sua ideia no ticket e nossa equipe fará o seu orçamento personalizado sem compromisso.",
     "estoque": null
+  },
+  {
+    "id": "prod_1786325447840",
+    "categoria": "Moedas",
+    "nome": "5.000 Anbu Coins",
+    "preco": "5,00",
+    "descricao": "🎰 Pacote Inicial! 5.000 moedas virtuais para apostar e jogar nos minigames do servidor.",
+    "media": null,
+    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
+  },
+  {
+    "id": "prod_1786325548507",
+    "categoria": "Moedas",
+    "nome": "12.000 Anbu Coins",
+    "preco": "10,00",
+    "descricao": "🔥 Economize R$ 2! Leve 12.000 moedas (+2.000 bônus) para apostar alto no Crash e Coinflip.",
+    "media": null,
+    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
+  },
+  {
+    "id": "prod_1786325563692",
+    "categoria": "Moedas",
+    "nome": "35.000 Anbu Coins",
+    "preco": "25,00",
+    "descricao": "⚡ Pacote dos Apostadores! Leve 35.000 moedas (+10.000 bônus) com o melhor rendimento.",
+    "media": null,
+    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
+  },
+  {
+    "id": "prod_1786325582990",
+    "categoria": "Moedas",
+    "nome": "80.000 Anbu Coins",
+    "preco": "50,00",
+    "descricao": "👑 Pacote Recomendado! 80.000 moedas (+30.000 bônus) para dominar o topo do ranking de magnatas.",
+    "media": null,
+    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
+  },
+  {
+    "id": "prod_1786325601505",
+    "categoria": "Moedas",
+    "nome": "12.000 Anbu Coins",
+    "preco": "10.00",
+    "descricao": "🔥 Economize R$ 2! Leve 12.000 moedas (+2.000 bônus) para apostar alto no Crash e Coinflip.",
+    "media": null,
+    "entrega": "Obrigado pela compra! As moedas foram enviadas. Caso não receba em 1 min, abra um ticket no canal de suporte!",
+    "estoque": null
   }
 ]
