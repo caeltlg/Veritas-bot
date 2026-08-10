@@ -1,0 +1,82 @@
+Adicione o comando !pay @usuario [valor] no evento messageCreate. Ele deve permitir transferir saldo de moedas de um usuário para outro com validação de saldo e sem permitir transferências para o próprio usuário ou para bots."
+
+// Banco de dados em memória/arquivo para armazenar o cooldown do !daily
+const cooldownDaily = new Map();
+
+if (message.content === '!daily') {
+  const userId = message.author.id;
+  const agora = Date.now();
+  const tempoEspera = 24 * 60 * 60 * 1000; // 24 horas em milissegundos
+
+  if (cooldownDaily.has(userId)) {
+    const proximoUso = cooldownDaily.get(userId) + tempoEspera;
+    if (agora < proximoUso) {
+      const horasRestantes = Math.ceil((proximoUso - agora) / (1000 * 60 * 60));
+      return message.reply(`⏳ Você já resgatou seu bônus diário! Volte em **${horasRestantes}h** para pegar mais.`);
+    }
+  }
+
+  // Identifica o dia da semana (0 = Domingo, 6 = Sábado)
+  const diaSemana = new Date().getDay();
+  const éFimDeSemana = (diaSemana === 0 || diaSemana === 6);
+
+  // Valor base: 200 a 500 moedas | Fim de semana: 400 a 1000 moedas
+  const min = éFimDeSemana ? 400 : 200;
+  const max = éFimDeSemana ? 1000 : 500;
+  const recompensa = Math.floor(Math.random() * (max - min + 1)) + min;
+
+  adicionarMoedas(userId, recompensa);
+  cooldownDaily.set(userId, agora);
+
+  const embedDaily = new EmbedBuilder()
+    .setTitle(éFimDeSemana ? '🔥 JACKPOT DE FIM DE SEMANA!' : '🎁 BÔNUS DIÁRIO RESGATADO')
+    .setDescription(`Você ganhou **+${recompensa} moedas** no seu !daily!${éFimDeSemana ? '\n\n*⚡ O Bônus de Fim de Semana está ATIVO! Prêmios dobrados!*' : ''}\n\n💳 **Saldo Atual:** ${getSaldo(userId).toLocaleString()} moedas`)
+    .setColor(éFimDeSemana ? '#f1c40f' : '#2ecc71')
+    .setTimestamp();
+
+  return message.reply({ embeds: [embedDaily] });
+}
+
+
+// ==================== COMANDO DE TRANSFERÊNCIA (!pay) ====================
+if (message.content.startsWith('!pay')) {
+  const args = message.content.split(' ');
+  const destinatario = message.mentions.users.first();
+  const valor = parseInt(args[2]);
+
+  // Validações básicas
+  if (!destinatario || !valor || valor <= 0) {
+    return message.reply('⚠️ Uso incorreto! Use: `!pay @usuario [quantidade]` (Ex: `!pay @amigo 1000`)');
+  }
+
+  if (destinatario.id === message.author.id) {
+    return message.reply('❌ Você não pode transferir moedas para você mesmo!');
+  }
+
+  if (destinatario.bot) {
+    return message.reply('❌ Você não pode transferir moedas para bots!');
+  }
+
+  const saldoRemetente = getSaldo(message.author.id);
+
+  if (saldoRemetente < valor) {
+    return message.reply(`❌ Saldo insuficiente! Você tem apenas **${saldoRemetente.toLocaleString()} moedas**.`);
+  }
+
+  // Executa a transferência
+  removerMoedas(message.author.id, valor);
+  adicionarMoedas(destinatario.id, valor);
+
+  const embedPay = new EmbedBuilder()
+    .setTitle('💸 TRANSFERÊNCIA REALIZADA!')
+    .setDescription(`**${message.author}** enviou **${valor.toLocaleString()} moedas** para **${destinatario}**!`)
+    .addFields(
+      { name: '📉 Seu novo saldo:', value: `${getSaldo(message.author.id).toLocaleString()} moedas`, inline: true },
+      { name: '📈 Saldo do destinatário:', value: `${getSaldo(destinatario.id).toLocaleString()} moedas`, inline: true }
+    )
+    .setColor('#2ecc71')
+    .setTimestamp();
+
+  return message.reply({ embeds: [embedPay] });
+}
+

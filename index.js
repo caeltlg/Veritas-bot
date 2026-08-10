@@ -70,6 +70,7 @@ const cuponsAplicados = new Map();
 const vendasAprovadas = new Set();
 const invitesCache = new Map();
 const convitesMembros = new Map();
+const cooldownDaily = new Map();
 const CASA_ID = '__casa__';
 let carteiras = {};
 
@@ -462,6 +463,109 @@ client.on('messageCreate', async (message) => {
         return message.reply(
             `✅ Adicionadas **${quantidade.toLocaleString('pt-BR')} moedas** para ${mencao}. Saldo atualizado!`,
         );
+    }
+
+    if (commandName === '!daily') {
+        const userId = message.author.id;
+        const agora = Date.now();
+        const tempoEspera = 24 * 60 * 60 * 1000;
+        const ultimoResgate = cooldownDaily.get(userId);
+
+        if (ultimoResgate) {
+            const proximoUso = ultimoResgate + tempoEspera;
+            if (agora < proximoUso) {
+                const horasRestantes = Math.ceil(
+                    (proximoUso - agora) / (1000 * 60 * 60),
+                );
+                return message.reply(
+                    `⏳ Você já resgatou seu bônus diário! Volte em **${horasRestantes}h** para pegar mais.`,
+                );
+            }
+        }
+
+        const diaSemana = new Date().getDay();
+        const eFimDeSemana = diaSemana === 0 || diaSemana === 6;
+        const minimo = eFimDeSemana ? 400 : 200;
+        const maximo = eFimDeSemana ? 1000 : 500;
+        const recompensa =
+            Math.floor(Math.random() * (maximo - minimo + 1)) + minimo;
+
+        adicionarMoedas(userId, recompensa);
+        cooldownDaily.set(userId, agora);
+
+        const embedDaily = new EmbedBuilder()
+            .setTitle(
+                eFimDeSemana
+                    ? '🔥 JACKPOT DE FIM DE SEMANA!'
+                    : '🎁 BÔNUS DIÁRIO RESGATADO',
+            )
+            .setDescription(
+                `Você ganhou **+${recompensa.toLocaleString('pt-BR')} moedas** no seu !daily!` +
+                (eFimDeSemana
+                    ? '\n\n*⚡ O Bônus de Fim de Semana está ATIVO! Prêmios dobrados!*'
+                    : '') +
+                `\n\n💳 **Saldo Atual:** ${getSaldo(userId).toLocaleString('pt-BR')} moedas`,
+            )
+            .setColor(eFimDeSemana ? '#f1c40f' : '#2ecc71')
+            .setTimestamp();
+
+        return message.reply({ embeds: [embedDaily] });
+    }
+
+    if (commandName === '!pay') {
+        const argumentos = message.content.trim().split(/\s+/);
+        const destinatario = message.mentions.users.first();
+        const valor = Number(argumentos[2]);
+
+        if (
+            !destinatario ||
+            !Number.isSafeInteger(valor) ||
+            valor <= 0
+        ) {
+            return message.reply(
+                '⚠️ Uso incorreto! Use: `!pay @usuario [quantidade]` (Ex: `!pay @amigo 1000`)',
+            );
+        }
+
+        if (destinatario.id === message.author.id) {
+            return message.reply('❌ Você não pode transferir moedas para você mesmo!');
+        }
+
+        if (destinatario.bot) {
+            return message.reply('❌ Você não pode transferir moedas para bots!');
+        }
+
+        const saldoRemetente = getSaldo(message.author.id);
+        if (saldoRemetente < valor) {
+            return message.reply(
+                `❌ Saldo insuficiente! Você tem apenas **${saldoRemetente.toLocaleString('pt-BR')} moedas**.`,
+            );
+        }
+
+        removerMoedas(message.author.id, valor);
+        adicionarMoedas(destinatario.id, valor);
+
+        const embedPay = new EmbedBuilder()
+            .setTitle('💸 TRANSFERÊNCIA REALIZADA!')
+            .setDescription(
+                `**${message.author}** enviou **${valor.toLocaleString('pt-BR')} moedas** para **${destinatario}**!`,
+            )
+            .addFields(
+                {
+                    name: '📉 Seu novo saldo:',
+                    value: `${getSaldo(message.author.id).toLocaleString('pt-BR')} moedas`,
+                    inline: true,
+                },
+                {
+                    name: '📈 Saldo do destinatário:',
+                    value: `${getSaldo(destinatario.id).toLocaleString('pt-BR')} moedas`,
+                    inline: true,
+                },
+            )
+            .setColor('#2ecc71')
+            .setTimestamp();
+
+        return message.reply({ embeds: [embedPay] });
     }
 
     if (commandName === '!apostar') {
