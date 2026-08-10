@@ -112,6 +112,15 @@ function removerMoedas(userId, quantidade) {
     salvarMoedas();
 }
 
+function setSaldo(userId, quantidade) {
+    if (!carteiras[userId]) {
+        carteiras[userId] = { moedas: 0 };
+    }
+
+    carteiras[userId].moedas = Math.max(0, quantidade);
+    salvarMoedas();
+}
+
 function carregarProdutos() {
     if (!fs.existsSync(DB_FILE)) {
         fs.writeFileSync(DB_FILE, `${JSON.stringify([], null, 2)}\n`);
@@ -536,6 +545,81 @@ client.on('messageCreate', async (message) => {
         return message.reply(
             `✅ Adicionadas **${quantidade.toLocaleString('pt-BR')} moedas** para ${mencao}. Saldo atualizado!`,
         );
+    }
+
+    if (commandName === '!removermoedas') {
+        if (!isAdmin) {
+            return message.reply(
+                '❌ Você não tem permissão de administrador para usar este comando.',
+            );
+        }
+
+        const argumentos = message.content.trim().split(/\s+/);
+        const usuario = message.mentions.users.first();
+        const valor = Number(argumentos[2]);
+
+        if (!usuario || !Number.isSafeInteger(valor) || valor <= 0) {
+            return message.reply(
+                '⚠️ Uso correto: `!removermoedas @usuario [quantidade]`',
+            );
+        }
+
+        removerMoedas(usuario.id, valor);
+
+        const embedRemove = new EmbedBuilder()
+            .setTitle('🔻 MOEDAS REMOVIDAS')
+            .setDescription(
+                `Foram removidas **${valor.toLocaleString('pt-BR')} Anbu Coins** do membro ${usuario}.`,
+            )
+            .addFields({
+                name: '💳 Saldo Atual:',
+                value: `${getSaldo(usuario.id).toLocaleString('pt-BR')} moedas`,
+            })
+            .setColor('#e74c3c')
+            .setTimestamp();
+
+        await atualizarRankingMagnatas(client);
+        return message.reply({ embeds: [embedRemove] });
+    }
+
+    if (commandName === '!resetarcoins') {
+        if (!isAdmin) {
+            return message.reply(
+                '❌ Você não tem permissão de administrador para usar este comando.',
+            );
+        }
+
+        const argumentos = message.content.trim().split(/\s+/);
+        const usuario = message.mentions.users.first();
+
+        if (argumentos[1]?.toLowerCase() === 'all') {
+            for (const id of Object.keys(carteiras)) {
+                carteiras[id].moedas = 0;
+            }
+            salvarMoedas();
+            await atualizarRankingMagnatas(client);
+
+            return message.reply(
+                '🔄 **TODAS** as moedas do servidor foram resetadas para 0!',
+            );
+        }
+
+        if (!usuario) {
+            return message.reply(
+                '⚠️ Uso correto: `!resetarcoins @usuario` ou `!resetarcoins all`',
+            );
+        }
+
+        setSaldo(usuario.id, 0);
+        await atualizarRankingMagnatas(client);
+
+        const embedReset = new EmbedBuilder()
+            .setTitle('🔄 SALDO RESETADO')
+            .setDescription(`O saldo de ${usuario} foi zerado com sucesso.`)
+            .setColor('#e74c3c')
+            .setTimestamp();
+
+        return message.reply({ embeds: [embedReset] });
     }
 
     if (commandName === '!daily') {
