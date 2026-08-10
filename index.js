@@ -553,7 +553,15 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             collector.stop('accepted');
-            await interaction.update({ embeds: [embedResultado], components: [] });
+            await interaction.update({
+                content: '🎲 **Girando a moeda no ar... Aguarde o resultado!**',
+                embeds: [],
+                components: [],
+            });
+
+            setTimeout(() => {
+                msgAposta.edit({ content: null, embeds: [embedResultado] }).catch(() => {});
+            }, 3000);
         });
 
         collector.on('end', async (_collected, reason) => {
@@ -572,6 +580,215 @@ client.on('messageCreate', async (message) => {
                 .setTimestamp();
 
             await msgAposta.edit({ embeds: [embedExpirada], components: [] }).catch(() => {});
+        });
+
+        return;
+    }
+
+    if (commandName === '!altobaixo') {
+        const aposta = Number(message.content.trim().split(/\s+/)[1]);
+        if (!Number.isSafeInteger(aposta) || aposta <= 0) {
+            return message.reply('⚠️ Use: `!altobaixo [valor]`');
+        }
+
+        if (getSaldo(message.author.id) < aposta) {
+            return message.reply('❌ Você não tem moedas suficientes!');
+        }
+
+        removerMoedas(message.author.id, aposta);
+
+        const numeroBase = Math.floor(Math.random() * 10) + 1;
+        const idJogo = `${message.author.id}_${Date.now()}`;
+        const embedJogo = new EmbedBuilder()
+            .setTitle('📊 JOGO: MAIOR OU MENOR')
+            .setDescription(
+                `O número base da mesa é: **${numeroBase}**\n\n` +
+                'O próximo número será **Maior** ou **Menor**?\n' +
+                '*Faça sua escolha nos botões abaixo!*',
+            )
+            .setColor('#3498db');
+        const rowJogo = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`hl_maior_${idJogo}`)
+                .setLabel('📈 Maior')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`hl_menor_${idJogo}`)
+                .setLabel('📉 Menor')
+                .setStyle(ButtonStyle.Danger),
+        );
+
+        let msgJogo;
+        try {
+            msgJogo = await message.reply({ embeds: [embedJogo], components: [rowJogo] });
+        } catch (error) {
+            adicionarMoedas(message.author.id, aposta);
+            console.error('Não foi possível publicar o jogo maior ou menor:', error.message);
+            return;
+        }
+
+        let finalizado = false;
+        const collector = msgJogo.createMessageComponentCollector({
+            filter: (interaction) => interaction.user.id === message.author.id,
+            time: 20000,
+            max: 1,
+        });
+
+        collector.on('collect', async (interaction) => {
+            finalizado = true;
+            const numeroSorteado = Math.floor(Math.random() * 10) + 1;
+            const escolheuMaior = interaction.customId.startsWith(`hl_maior_${idJogo}`);
+            const ganhou = escolheuMaior
+                ? numeroSorteado > numeroBase
+                : numeroSorteado < numeroBase;
+            const premio = ganhou ? Math.floor(aposta * 1.8) : 0;
+
+            if (ganhou) {
+                adicionarMoedas(message.author.id, premio);
+            } else {
+                adicionarMoedas(CASA_ID, aposta);
+            }
+
+            const resultado = new EmbedBuilder()
+                .setTitle(ganhou ? '🎉 VOCÊ VENCEU!' : '💀 VOCÊ PERDEU!')
+                .setDescription(
+                    `🔢 Número Base: **${numeroBase}**\n` +
+                    `🎯 Número Sorteado: **${numeroSorteado}**\n\n` +
+                    (ganhou
+                        ? `💸 Você faturou **+${premio.toLocaleString('pt-BR')} moedas**!`
+                        : `💸 Você perdeu **-${aposta.toLocaleString('pt-BR')} moedas** para a casa.`),
+                )
+                .setColor(ganhou ? '#2ecc71' : '#e74c3c');
+
+            collector.stop('answered');
+            await interaction.update({ embeds: [resultado], components: [] });
+        });
+
+        collector.on('end', async (_collected, reason) => {
+            if (finalizado || reason !== 'time') return;
+
+            finalizado = true;
+            adicionarMoedas(message.author.id, aposta);
+            const expirado = new EmbedBuilder()
+                .setTitle('⌛ JOGO EXPIRADO')
+                .setDescription(
+                    `Você não escolheu a tempo. As **${aposta.toLocaleString('pt-BR')} moedas** foram devolvidas ao seu saldo.`,
+                )
+                .setColor('#95a5a6');
+            await msgJogo.edit({ embeds: [expirado], components: [] }).catch(() => {});
+        });
+
+        return;
+    }
+
+    if (commandName === '!crash') {
+        const aposta = Number(message.content.trim().split(/\s+/)[1]);
+        if (!Number.isSafeInteger(aposta) || aposta <= 0) {
+            return message.reply('⚠️ Use: `!crash [valor]`');
+        }
+
+        if (getSaldo(message.author.id) < aposta) {
+            return message.reply('❌ Saldo insuficiente!');
+        }
+
+        removerMoedas(message.author.id, aposta);
+
+        let multiplicador = 1;
+        const pontoCrash = Number((Math.random() * (3.5 - 1.1) + 1.1).toFixed(2));
+        const idJogo = `${message.author.id}_${Date.now()}`;
+        let finalizado = false;
+        let intervalo;
+
+        const embedInicial = new EmbedBuilder()
+            .setTitle('🚀 CRASH DA ANBU SHOP')
+            .setDescription(
+                `Multiplicador atual: **${multiplicador.toFixed(2)}x**\n\n` +
+                '*Clique no botão abaixo para retirar suas moedas antes que o foguete exploda!*',
+            )
+            .setColor('#9b59b6');
+        const rowJogo = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`crash_retirar_${idJogo}`)
+                .setLabel('💰 RETIRAR LUCRO')
+                .setStyle(ButtonStyle.Success),
+        );
+
+        let msgJogo;
+        try {
+            msgJogo = await message.reply({ embeds: [embedInicial], components: [rowJogo] });
+        } catch (error) {
+            adicionarMoedas(message.author.id, aposta);
+            console.error('Não foi possível publicar o jogo crash:', error.message);
+            return;
+        }
+
+        const collector = msgJogo.createMessageComponentCollector({
+            filter: (interaction) => interaction.user.id === message.author.id,
+            time: 10000,
+            max: 1,
+        });
+
+        const encerrarComoPerda = async (titulo, descricao) => {
+            if (finalizado) return;
+            finalizado = true;
+            clearInterval(intervalo);
+            adicionarMoedas(CASA_ID, aposta);
+            const resultado = new EmbedBuilder()
+                .setTitle(titulo)
+                .setDescription(descricao)
+                .setColor('#e74c3c');
+            await msgJogo.edit({ embeds: [resultado], components: [] }).catch(() => {});
+        };
+
+        intervalo = setInterval(async () => {
+            if (finalizado) return;
+
+            multiplicador = Number((multiplicador + 0.25).toFixed(2));
+            if (multiplicador >= pontoCrash) {
+                await encerrarComoPerda(
+                    '💥 CRASH! EXPLODIU!',
+                    `O foguete explodiu em **${pontoCrash.toFixed(2)}x**!\nVocê perdeu sua aposta de **${aposta.toLocaleString('pt-BR')} moedas** para a casa.`,
+                );
+                collector.stop('crashed');
+                return;
+            }
+
+            const atualizacao = new EmbedBuilder()
+                .setTitle('🚀 CRASH DA ANBU SHOP (Subindo...)')
+                .setDescription(
+                    `Multiplicador atual: **${multiplicador.toFixed(2)}x**\n` +
+                    `Lucro potencial: **${Math.floor(aposta * multiplicador).toLocaleString('pt-BR')} moedas**\n\n` +
+                    '*Corra e clique em retirar!*',
+                )
+                .setColor('#9b59b6');
+            await msgJogo.edit({ embeds: [atualizacao], components: [rowJogo] }).catch(() => {});
+        }, 1000);
+
+        collector.on('collect', async (interaction) => {
+            if (finalizado) return;
+
+            finalizado = true;
+            clearInterval(intervalo);
+            const lucroFinal = Math.floor(aposta * multiplicador);
+            adicionarMoedas(message.author.id, lucroFinal);
+            const resultado = new EmbedBuilder()
+                .setTitle('🎯 SAQUE REALIZADO COM SUCESSO!')
+                .setDescription(
+                    `Você retirou em **${multiplicador.toFixed(2)}x**!\n` +
+                    `💰 Ganhou um total de **${lucroFinal.toLocaleString('pt-BR')} moedas**.`,
+                )
+                .setColor('#2ecc71');
+            collector.stop('cashed_out');
+            await interaction.update({ embeds: [resultado], components: [] });
+        });
+
+        collector.on('end', async (_collected, reason) => {
+            if (finalizado || reason !== 'time') return;
+
+            await encerrarComoPerda(
+                '⌛ CRASH ENCERRADO',
+                `O tempo acabou antes do saque. Você perdeu sua aposta de **${aposta.toLocaleString('pt-BR')} moedas** para a casa.`,
+            );
         });
 
         return;
