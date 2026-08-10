@@ -37,6 +37,7 @@ const CANAL_RANKING_ID = '1536179623447105536';
 const CARGO_VIP_ID = '1536067928464826368';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
+const PRECO_MINIMO_CUPOM = 7;
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -180,8 +181,20 @@ function chaveCupom(interaction) {
     return `${interaction.channelId}:${interaction.user.id}`;
 }
 
+function calcularPrecoComCupom(precoOriginal, porcentagemDesconto) {
+    const preco = valorNumerico(precoOriginal);
+    if (!Number.isFinite(preco)) return 0;
+    if (!porcentagemDesconto || preco <= PRECO_MINIMO_CUPOM) return preco;
+
+    const valorComDesconto = preco - preco * (porcentagemDesconto / 100);
+    return Math.max(
+        PRECO_MINIMO_CUPOM,
+        Math.round(valorComDesconto * 100) / 100,
+    );
+}
+
 function valorComDesconto(preco, descontoPorcentagem = 0) {
-    return valorNumerico(preco) * (1 - descontoPorcentagem / 100);
+    return calcularPrecoComCupom(preco, descontoPorcentagem);
 }
 
 function ehProdutoCoin(produto) {
@@ -323,6 +336,30 @@ async function gerarEmbedTopCompradores(guild, listaCompradores) {
 
     embed.setDescription(linhas.join('\n\n') || 'Nenhuma compra registrada ainda.');
     return embed;
+}
+
+async function obterProdutoDoCarrinho(channel) {
+    if (!channel?.isTextBased()) return null;
+
+    const mensagens = await channel.messages.fetch({ limit: 20 }).catch(() => null);
+    const mensagemCarrinho = mensagens?.find((mensagem) =>
+        mensagem.author.id === client.user?.id &&
+        mensagem.components?.some((linha) =>
+            linha.components?.some((componente) =>
+                componente.customId?.startsWith('aprovar_'),
+            ),
+        ),
+    );
+    const botaoAprovar = mensagemCarrinho?.components
+        ?.flatMap((linha) => linha.components || [])
+        .find((componente) => componente.customId?.startsWith('aprovar_'));
+
+    if (!botaoAprovar?.customId) return null;
+
+    const payload = botaoAprovar.customId.slice('aprovar_'.length);
+    const separatorIndex = payload.lastIndexOf('_');
+    const produtoId = payload.slice(0, separatorIndex);
+    return carregarProdutos().find((produto) => produto.id === produtoId) || null;
 }
 
 async function sincronizarConvites(guild) {
@@ -1371,12 +1408,43 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        const produto = await obterProdutoDoCarrinho(interaction.channel);
+        if (!produto) {
+            return interaction.reply({
+                content: '❌ Não foi possível localizar o produto deste carrinho.',
+                ephemeral: true,
+            });
+        }
+
+        const precoOriginal = valorNumerico(produto.preco);
+        if (precoOriginal <= PRECO_MINIMO_CUPOM) {
+            return interaction.reply({
+                content:
+                    '⚠️ Cupons de desconto não podem ser aplicados em produtos de R$ 7,00 ou menos.',
+                ephemeral: true,
+            });
+        }
+
+        const precoFinal = calcularPrecoComCupom(
+            precoOriginal,
+            cupom.descontoPorcentagem,
+        );
         cuponsAplicados.set(chaveCupom(interaction), {
             codigo,
             descontoPorcentagem: cupom.descontoPorcentagem,
+            precoOriginal,
+            precoFinal,
         });
+
+        const atingiuValorMinimo = precoFinal === PRECO_MINIMO_CUPOM &&
+            precoOriginal - precoOriginal * (cupom.descontoPorcentagem / 100) <
+                PRECO_MINIMO_CUPOM;
         return interaction.reply({
-            content: `✅ **Cupom aplicado com sucesso!** Você recebeu **${cupom.descontoPorcentagem}% de desconto** nesta compra.`,
+            content: atingiuValorMinimo
+                ? `🎉 Cupom aplicado! O valor mínimo permitido por produto é **R$ 7,00**. ` +
+                  `Seus ${formatarValor(precoOriginal)} ficaram por **${formatarValor(precoFinal)}**.`
+                : `🎉 Cupom de ${cupom.descontoPorcentagem}% aplicado com sucesso! ` +
+                  `De ${formatarValor(precoOriginal)} por **${formatarValor(precoFinal)}**.`,
             ephemeral: true,
         });
     }
@@ -1745,6 +1813,15 @@ client.on('interactionCreate', async (interaction) => {
 
     if (interaction.customId.startsWith('gerarpix_')) {
         const pixKey = obterPix();
+        const cupom = cuponsAplicados.get(chaveCupom(interaction));
+        const produto = carregarProdutos().find((item) =>
+            interaction.customId === `gerarpix_${item.id}`,
+        );
+        const valorPix = cupom?.precoFinal ??
+            (produto ? valorNumerico(produto.preco) : null);
+        const informacaoValor = valorPix !== null
+            ? `\n💰 **Valor a pagar:** ${formatarValor(valorPix)}`
+            : '';
         const qrCodeUrl =
             `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixKey)}`;
 
@@ -1754,7 +1831,8 @@ client.on('interactionCreate', async (interaction) => {
             .setDescription(
                 'Copie a chave abaixo para realizar o pagamento no seu banco:\n\n' +
                 `\`\`\`${pixKey}\`\`\`\n` +
-                '📌 *Ou escaneie o QR Code abaixo pelo aplicativo do seu banco:*'
+                informacaoValor +
+                '\n📌 *Ou escaneie o QR Code abaixo pelo aplicativo do seu banco:*'
             )
             .setImage(qrCodeUrl);
 
@@ -1800,7 +1878,8 @@ client.on('interactionCreate', async (interaction) => {
 
         const cupom = cuponsAplicados.get(`${interaction.channelId}:${userId}`);
         const descontoPorcentagem = cupom?.descontoPorcentagem || 0;
-        const valorPago = valorComDesconto(produto.preco, descontoPorcentagem);
+        const valorPago = cupom?.precoFinal ??
+            valorComDesconto(produto.preco, descontoPorcentagem);
         const produtoCoin = ehProdutoCoin(produto);
         const quantidadeCoins = produtoCoin ? obterQuantidadeCoins(produto) : 0;
 
