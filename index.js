@@ -41,22 +41,22 @@ const CARGO_VIP_RUBI_ID = '1536090550933917727';
 const auxiliosTroca = {
     aux_5: {
         nome: 'VIP FF 24H',
-        custo: 5000,
+        custo: 15000,
         link: config.auxiliosTroca?.aux_5 || null,
     },
     aux_10: {
         nome: 'VIP FF 7 Dias',
-        custo: 10000,
+        custo: 30000,
         link: config.auxiliosTroca?.aux_10 || null,
     },
     aux_15: {
         nome: 'VIP FF 30 Dias',
-        custo: 15000,
+        custo: 50000,
         link: config.auxiliosTroca?.aux_15 || null,
     },
     aux_20: {
         nome: 'VIP FF Vitalício',
-        custo: 20000,
+        custo: 100000,
         link: config.auxiliosTroca?.aux_20 || null,
     },
 };
@@ -817,29 +817,29 @@ client.on('messageCreate', async (message) => {
             .setTitle('🔄 LOJA VIP AUTOMÁTICA')
             .setDescription(
                 'Troque suas **Anbu Coins** por acesso VIP direto pelo nosso painel!\n\n' +
-                '🔹 **VIP FF 24H** ➔ 5.000 Coins\n' +
-                '🔹 **VIP FF 7 Dias** ➔ 10.000 Coins\n' +
-                '🔹 **VIP FF 30 Dias** ➔ 15.000 Coins\n' +
-                '🔹 **VIP FF Vitalício** ➔ 20.000 Coins',
+                '🔹 **VIP FF 24H** ➔ 15.000 Coins\n' +
+                '🔹 **VIP FF 7 Dias** ➔ 30.000 Coins\n' +
+                '🔹 **VIP FF 30 Dias** ➔ 50.000 Coins\n' +
+                '🔹 **VIP FF Vitalício** ➔ 100.000 Coins',
             )
             .setColor('#9b59b6');
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('trocar_aux_5')
-                .setLabel('VIP 24H')
+                .setLabel('VIP 24H (15k)')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('trocar_aux_10')
-                .setLabel('VIP 7D')
+                .setLabel('VIP 7D (30k)')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('trocar_aux_15')
-                .setLabel('VIP 30D')
+                .setLabel('VIP 30D (50k)')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('trocar_aux_20')
-                .setLabel('VIP Vitalício')
+                .setLabel('VIP Vitalício (100k)')
                 .setStyle(ButtonStyle.Success),
         );
 
