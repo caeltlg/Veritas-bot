@@ -1,0 +1,220 @@
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const fs = require('fs');
+
+const PREFIX = '~';
+const CARGO_VIP_ID = '1536067928464826368';
+const CANAL_VENDAS_ID = '1536059223211769926';
+const CANAL_APOSTAS_ID = '1536179345364619304';
+
+// Gerenciamento de Moedas
+let saldoCoins = {};
+if (fs.existsSync('./coins.json')) {
+  saldoCoins = JSON.parse(fs.readFileSync('./coins.json', 'utf8'));
+}
+function salvarCoins() {
+  fs.writeFileSync('./coins.json', JSON.stringify(saldoCoins, null, 2));
+}
+
+function pegarSaldo(userId) {
+  return saldoCoins[userId] || 0;
+}
+
+// Tabela de Links dos Auxílios para a Lojinha de Trocas
+const auxiliosTroca = {
+  'aux_5': { nome: 'Auxílio R$ 5,00', custo: 5000, link: 'https://seusite.com/auxilio5' },
+  'aux_10': { nome: 'Auxílio R$ 10,00', custo: 10000, link: 'https://seusite.com/auxilio10' },
+  'aux_15': { nome: 'Auxílio R$ 15,00', custo: 15000, link: 'https://seusite.com/auxilio15' },
+  'aux_20': { nome: 'Auxílio R$ 20,00', custo: 20000, link: 'https://seusite.com/auxilio20' },
+  'aux_25': { nome: 'Auxílio R$ 25,00', custo: 25000, link: 'https://seusite.com/auxilio25' }
+};
+
+// ==================== EVENTO DE MENSAGENS (COMANDOS ~) ====================
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  // COMANDO ~saldo (Envia no PV para ser 100% Privado)
+  if (command === 'saldo') {
+    const saldo = pegarSaldo(message.author.id);
+    
+    // Apaga a mensagem do comando para manter o chat limpo
+    message.delete().catch(() => {});
+
+    try {
+      await message.author.send(`💰 **| Anbu Shop**: Seu saldo atual é de **${saldo.toLocaleString()} Anbu Coins**.`);
+    } catch (err) {
+      message.channel.send(`⚠️ ${message.author}, abra seu Direct (PV) para receber seu saldo.`).then(msg => setTimeout(() => msg.delete(), 5000));
+    }
+    return;
+  }
+
+  // COMANDO ~resetarcoins (Corrigido para salvar no JSON e atualizar ranking)
+  if (command === 'resetarcoins') {
+    if (!message.member.permissions.has('Administrator')) return;
+
+    const membro = message.mentions.members.first();
+    if (args[0] === 'all') {
+      saldoCoins = {};
+      salvarCoins();
+      return message.reply('🔄 **|** Saldo de **TODOS** os membros foi zerado!');
+    } else if (membro) {
+      saldoCoins[membro.id] = 0;
+      salvarCoins();
+      return message.reply({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🔄 SALDO RESETADO')
+            .setDescription(`O saldo de ${membro} foi zerado com sucesso.`)
+            .setColor('#e74c3c')
+        ]
+      });
+    }
+  }
+
+  // COMANDO PARA ENVIAR A PAINEL DE TROCA DE COINS POR AUXÍLIO
+  if (command === 'paineltroca' && message.member.permissions.has('Administrator')) {
+    const embedTroca = new EmbedBuilder()
+      .setTitle('🔄 TROCA DE COINS POR AUXÍLIO VIP')
+      .setDescription('Troque suas **Anbu Coins** acumuladas por links de Auxílios VIP de forma 100% automática!\n\n' +
+        '🔹 **Auxílio R$ 5,00** ➔ 5.000 Coins\n' +
+        '🔹 **Auxílio R$ 10,00** ➔ 10.000 Coins\n' +
+        '🔹 **Auxílio R$ 15,00** ➔ 15.000 Coins\n' +
+        '🔹 **Auxílio R$ 20,00** ➔ 20.000 Coins\n' +
+        '🔹 **Auxílio R$ 25,00** ➔ 25.000 Coins')
+      .setColor('#9b59b6');
+
+    const row1 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('trocar_aux_5').setLabel('Resgatar R$ 5 (5k Coins)').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('trocar_aux_10').setLabel('Resgatar R$ 10 (10k Coins)').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('trocar_aux_15').setLabel('Resgatar R$ 15 (15k Coins)').setStyle(ButtonStyle.Primary)
+    );
+
+    const row2 = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('trocar_aux_20').setLabel('Resgatar R$ 20 (20k Coins)').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('trocar_aux_25').setLabel('Resgatar R$ 25 (25k Coins)').setStyle(ButtonStyle.Success)
+    );
+
+    return message.channel.send({ embeds: [embedTroca], components: [row1, row2] });
+  }
+});
+
+// ==================== INTERAÇÕES E BOTAO DE TROCA AUTOMÁTICA ====================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  // Lógica da Lojinha de Troca de Coins
+  if (interaction.customId.startsWith('trocar_')) {
+    const chaveAuxilio = interaction.customId.replace('trocar_', '');
+    const item = auxiliosTroca[chaveAuxilio];
+
+    if (!item) return;
+
+    const saldoAtual = pegarSaldo(interaction.user.id);
+
+    if (saldoAtual < item.custo) {
+      return interaction.reply({
+        content: `❌ **Saldo Insuficiente!** Você precisa de **${item.custo.toLocaleString()} Coins** e possui **${saldoAtual.toLocaleString()} Coins**.`,
+        ephemeral: true
+      });
+    }
+
+    // Desconta o saldo
+    saldoCoins[interaction.user.id] -= item.custo;
+    salvarCoins();
+
+    // Tenta enviar o produto na DM (PV) do cliente
+    try {
+      await interaction.user.send({
+        embeds: [
+          new EmbedBuilder()
+            .setTitle('🎉 RESGATE DE COINS REALIZADO COM SUCESSO!')
+            .setDescription(`Você trocou **${item.custo.toLocaleString()} Anbu Coins** pelo **${item.nome}**.\n\n🔗 **Link do seu Auxílio:**\n${item.link}`)
+            .setColor('#2ecc71')
+            .setFooter({ text: 'Obrigado por utilizar a Anbu Shop!' })
+        ]
+      });
+
+      return interaction.reply({
+        content: `✅ **Troca realizada!** O link do **${item.nome}** foi enviado no seu PV (Direct). Saldo descontado!`,
+        ephemeral: true
+      });
+    } catch (err) {
+      // Se a DM estiver fechada, devolve o saldo
+      saldoCoins[interaction.user.id] += item.custo;
+      salvarCoins();
+      return interaction.reply({
+        content: `❌ **Erro ao enviar no PV!** Sua DM está fechada. Abra seu Direct para receber o produto e tente novamente. Suas moedas foram devolvidas.`,
+        ephemeral: true
+      });
+    }
+  }
+});
+
+// ==================== APROVAÇÃO DE VENDA & CARGO AUTOMÁTICO ====================
+async function aprovarVenda(interaction, clienteId, nomeProduto, valorPago, usouCupom) {
+  try {
+    const guild = interaction.guild;
+    const membro = await guild.members.fetch(clienteId).catch(() => null);
+
+    // 1. Concede o cargo VIP automaticamente
+    if (membro) {
+      await membro.roles.add(CARGO_VIP_ID).catch(console.error);
+    }
+
+    // 2. Anúncio no canal #vendas SEM expor o cupom e SEM duplicar
+    const canalVendas = await guild.channels.fetch(CANAL_VENDAS_ID);
+    if (canalVendas) {
+      const embedVenda = new EmbedBuilder()
+        .setTitle('📦 Venda Confirmada')
+        .addFields(
+          { name: '👤 Usuário:', value: `<@${clienteId}>`, inline: false },
+          { name: '🛒 Produto:', value: nomeProduto, inline: false },
+          { name: '💰 Valor:', value: `R$ ${valorPago.toFixed(2)}`, inline: false },
+          { name: '🎟️ Cupom:', value: usouCupom ? 'Aplicado ✅' : 'Nenhum', inline: false },
+          { name: '⚙️ Modalidade:', value: 'PIX', inline: false }
+        )
+        .setColor('#2ecc71');
+
+      await canalVendas.send({
+        content: `🎉 <@${clienteId}> adquiriu **${nomeProduto}** por **R$ ${valorPago.toFixed(2)}** na loja! Obrigado pela preferência! 🚀`,
+        embeds: [embedVenda]
+      });
+    }
+
+    // 3. Atualiza o ranking acumulado de compradores
+    registrarCompra(clienteId, valorPago);
+    await atualizarTopCompradores(client, '1536064461469777961');
+
+  } catch (error) {
+    console.error("Erro na aprovação:", error);
+  }
+}
+
+npm install pix-payload-generator
+
+const { Pix } = require('pix-payload-generator');
+
+// Função para gerar o código PIX com valor cravado
+function gerarPixCravado(valor) {
+    const pix = new Pix(
+        'Alissonalmeidapires3@gmail.com', // Sua Chave PIX
+        'Anbu Shop',                      // Nome do Beneficiário
+        'Brasil',                         // Cidade
+        'ANBUSHOP' + Date.now(),          // ID Único da transação
+        parseFloat(valor).toFixed(2)      // Valor formatado
+    );
+    return pix.getPayload();
+}
+
+// Exemplo dentro do seu comando de venda
+const valorDoProduto = 20.00; // Valor final após cupom
+const codigoPix = gerarPixCravado(valorDoProduto);
+
+// Envio para o cliente
+interaction.reply({
+    content: `💳 **Pagamento PIX Gerado!**\n\nCopie o código abaixo e pague exatamente **R$ ${valorDoProduto.toFixed(2)}**:\n\n\`\`\`${codigoPix}\`\`\`\n\n*Após pagar, envie o comprovante aqui.*`,
+    ephemeral: true
+});
+
