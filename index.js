@@ -40,29 +40,24 @@ const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
 const auxiliosTroca = {
     aux_5: {
-        nome: 'Auxílio R$ 5,00',
+        nome: 'VIP FF 24H',
         custo: 5000,
         link: config.auxiliosTroca?.aux_5 || null,
     },
     aux_10: {
-        nome: 'Auxílio R$ 10,00',
+        nome: 'VIP FF 7 Dias',
         custo: 10000,
         link: config.auxiliosTroca?.aux_10 || null,
     },
     aux_15: {
-        nome: 'Auxílio R$ 15,00',
+        nome: 'VIP FF 30 Dias',
         custo: 15000,
         link: config.auxiliosTroca?.aux_15 || null,
     },
     aux_20: {
-        nome: 'Auxílio R$ 20,00',
+        nome: 'VIP FF Vitalício',
         custo: 20000,
         link: config.auxiliosTroca?.aux_20 || null,
-    },
-    aux_25: {
-        nome: 'Auxílio R$ 25,00',
-        custo: 25000,
-        link: config.auxiliosTroca?.aux_25 || null,
     },
 };
 
@@ -819,48 +814,38 @@ client.on('messageCreate', async (message) => {
         }
 
         const embedTroca = new EmbedBuilder()
-            .setTitle('🔄 TROCA DE COINS POR AUXÍLIO VIP')
+            .setTitle('🔄 LOJA VIP AUTOMÁTICA')
             .setDescription(
-                'Troque suas **Anbu Coins** por links de Auxílios VIP de forma automática!\n\n' +
-                '🔹 **Auxílio R$ 5,00** ➔ 5.000 Coins\n' +
-                '🔹 **Auxílio R$ 10,00** ➔ 10.000 Coins\n' +
-                '🔹 **Auxílio R$ 15,00** ➔ 15.000 Coins\n' +
-                '🔹 **Auxílio R$ 20,00** ➔ 20.000 Coins\n' +
-                '🔹 **Auxílio R$ 25,00** ➔ 25.000 Coins\n\n' +
-                '📩 O link será enviado por mensagem direta após a confirmação.',
+                'Troque suas **Anbu Coins** por acesso VIP direto pelo nosso painel!\n\n' +
+                '🔹 **VIP FF 24H** ➔ 5.000 Coins\n' +
+                '🔹 **VIP FF 7 Dias** ➔ 10.000 Coins\n' +
+                '🔹 **VIP FF 30 Dias** ➔ 15.000 Coins\n' +
+                '🔹 **VIP FF Vitalício** ➔ 20.000 Coins',
             )
-            .setColor('#9b59b6')
-            .setFooter({ text: 'Mantenha a DM aberta para receber o auxílio.' });
+            .setColor('#9b59b6');
 
-        const row1 = new ActionRowBuilder().addComponents(
+        const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('trocar_aux_5')
-                .setLabel('Resgatar R$ 5 (5k Coins)')
+                .setLabel('VIP 24H')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('trocar_aux_10')
-                .setLabel('Resgatar R$ 10 (10k Coins)')
+                .setLabel('VIP 7D')
                 .setStyle(ButtonStyle.Primary),
             new ButtonBuilder()
                 .setCustomId('trocar_aux_15')
-                .setLabel('Resgatar R$ 15 (15k Coins)')
+                .setLabel('VIP 30D')
                 .setStyle(ButtonStyle.Primary),
-        );
-
-        const row2 = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId('trocar_aux_20')
-                .setLabel('Resgatar R$ 20 (20k Coins)')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('trocar_aux_25')
-                .setLabel('Resgatar R$ 25 (25k Coins)')
+                .setLabel('VIP Vitalício')
                 .setStyle(ButtonStyle.Success),
         );
 
         return message.channel.send({
             embeds: [embedTroca],
-            components: [row1, row2],
+            components: [row],
         });
     }
 

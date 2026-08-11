@@ -1,5 +1,11 @@
 {
   "token": "SEU_NOVO_TOKEN_AQUI",
   "chavePix": "<alissonalmeidapires3@gmail.com>",
-  "donoNome": "Anbu Shop"
+  "donoNome": "Anbu Shop",
+  "auxiliosTroca": {
+    "aux_5": "https://blackcore-auxlio.lovable.app/",
+    "aux_10": "https://blackcore-auxlio.lovable.app/",
+    "aux_15": "https://blackcore-auxlio.lovable.app/",
+    "aux_20": "https://blackcore-auxlio.lovable.app/"
+  }
 }
