@@ -1,0 +1,171 @@
+const PREFIX = '~'; // Prefixo atualizado para ~
+
+client.on('messageCreate', async (message) => {
+  // Ignora bots e mensagens que não começam com ~
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+
+  // ID do canal de apostas inserido diretamente
+  const CANAL_APOSTAS_ID = '1536179345364619304';
+  
+  // Permite executar se estiver no canal de apostas OU se for o comando ~daily
+  if (message.channel.id !== CANAL_APOSTAS_ID && !message.content.startsWith(`${PREFIX}daily`)) {
+    return;
+  }
+
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  // ==================== COMANDO: ~saldo ====================
+  if (command === 'saldo') {
+    const saldo = pegarSaldo(message.author.id);
+
+    return message.reply({
+      content: `💰 **| ${message.author}**, seu saldo atual é de **${saldo.toLocaleString()} Anbu Coins**.`
+    });
+  }
+
+  // ==================== COMANDO: ~altobaixo ====================
+  if (command === 'altobaixo') {
+    const aposta = parseInt(args[0]);
+    if (isNaN(aposta) || aposta <= 0) {
+      return message.reply('❌ Digite um valor válido para apostar! Exemplo: `~altobaixo 100`');
+    }
+
+    const saldoAtual = pegarSaldo(message.author.id);
+    if (saldoAtual < aposta) {
+      return message.reply('❌ Você não tem Anbu Coins suficientes para essa aposta!');
+    }
+
+    const embedJogo = new EmbedBuilder()
+      .setTitle('🎲 Jogo Alto ou Baixo')
+      .setDescription(`Aposta de **${aposta} Coins** por ${message.author}\nA próxima carta será maior ou menor que **7**?`)
+      .setColor('#f39c12');
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`ab_maior_${message.author.id}_${aposta}`).setLabel('Maior (⬆️)').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`ab_menor_${message.author.id}_${aposta}`).setLabel('Menor (⬇️)').setStyle(ButtonStyle.Danger)
+    );
+
+    return message.channel.send({ embeds: [embedJogo], components: [row] });
+  }
+
+  // ==================== COMANDO: ~crash ====================
+  if (command === 'crash') {
+    const aposta = parseInt(args[0]);
+    if (isNaN(aposta) || aposta <= 0) {
+      return message.reply('❌ Digite um valor válido! Exemplo: `~crash 100`');
+    }
+
+    const saldoAtual = pegarSaldo(message.author.id);
+    if (saldoAtual < aposta) {
+      return message.reply('❌ Você não tem Anbu Coins suficientes para essa aposta!');
+    }
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`crash_parar_${message.author.id}_${aposta}`).setLabel('Parar / Retirar (🚀)').setStyle(ButtonStyle.Primary)
+    );
+
+    return message.channel.send({
+      content: `🚀 **Crash de ${message.author}** | Aposta: **${aposta} Coins**`,
+      components: [row]
+    });
+  }
+});
+
+// =========================================================================
+// TRAVA DE SEGURANÇA NOS BOTÕES (Impede outros jogadores de interagir)
+// =========================================================================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const [prefixo, acao, donoId, valorAposta] = interaction.customId.split('_');
+
+  if (prefixo === 'ab' || prefixo === 'crash') {
+    // Se não for o dono da aposta que clicou:
+    if (interaction.user.id !== donoId) {
+      return interaction.reply({
+        content: '❌ Essa aposta não é sua! Abra seu próprio jogo usando o comando no chat.',
+        ephemeral: true
+      });
+    }
+
+    await interaction.deferUpdate();
+  }
+});
+
+const fs = require('fs');
+
+// Carrega o histórico acumulado
+let historicoCompras = {};
+if (fs.existsSync('./compras.json')) {
+  historicoCompras = JSON.parse(fs.readFileSync('./compras.json', 'utf8'));
+}
+
+function salvarCompras() {
+  fs.writeFileSync('./compras.json', JSON.stringify(historicoCompras, null, 2));
+}
+
+// Carrega ID da mensagem fixa
+let configRanking = { mensagemId: null };
+if (fs.existsSync('./config_ranking.json')) {
+  configRanking = JSON.parse(fs.readFileSync('./config_ranking.json', 'utf8'));
+}
+
+// Soma o valor pago ao total do usuário
+function registrarCompra(userId, valorPago) {
+  if (!historicoCompras[userId]) {
+    historicoCompras[userId] = 0;
+  }
+  historicoCompras[userId] += valorPago;
+  salvarCompras();
+}
+
+// Atualiza e EDITA a mensagem única no canal
+async function atualizarTopCompradores(client, canalId = '1536064461469777961') {
+  try {
+    const canal = await client.channels.fetch(canalId);
+    if (!canal) return;
+
+    const rankingOrdenado = Object.entries(historicoCompras)
+      .map(([userId, totalGasto]) => ({ userId, totalGasto }))
+      .sort((a, b) => b.totalGasto - a.totalGasto)
+      .slice(0, 10);
+
+    if (rankingOrdenado.length === 0) return;
+
+    const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+    let descricao = '';
+
+    for (let i = 0; i < rankingOrdenado.length; i++) {
+      const item = rankingOrdenado[i];
+      const membro = await canal.guild.members.fetch(item.userId).catch(() => null);
+      const cargo = membro ? membro.roles.highest : 'Membro';
+      const valorFormatado = item.totalGasto.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+      descricao += `${medalhas[i]} <@${item.userId}> | **Cargo:** ${cargo}\n💰 **Total Gasto:** R$ ${valorFormatado}\n\n`;
+    }
+
+    const embedRanking = new EmbedBuilder()
+      .setTitle('🏆 RANKING - TOP COMPRADORES ANBU SHOP')
+      .setDescription(descricao)
+      .setColor('#ff0055')
+      .setTimestamp();
+
+    if (configRanking.mensagemId) {
+      try {
+        const mensagemExistente = await canal.messages.fetch(configRanking.mensagemId);
+        await mensagemExistente.edit({ embeds: [embedRanking] });
+        return;
+      } catch (err) {
+        // Se a mensagem sumir do chat por algum motivo, cria outra abaixo
+      }
+    }
+
+    const novaMensagem = await canal.send({ embeds: [embedRanking] });
+    configRanking.mensagemId = novaMensagem.id;
+    fs.writeFileSync('./config_ranking.json', JSON.stringify(configRanking, null, 2));
+
+  } catch (error) {
+    console.error("Erro ao atualizar ranking:", error);
+  }
+}

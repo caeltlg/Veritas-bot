@@ -29,6 +29,7 @@ process.on('unhandledRejection', (error) => {
 const discordToken = process.env.DISCORD_TOKEN || config.token;
 const app = express();
 const HTTP_PORT = 3000;
+const PREFIX = '~';
 const CANAL_STATUS_ID = '1536057245958275094';
 const CANAL_VENDAS_ID = '1536059223211769926';
 const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
@@ -658,16 +659,15 @@ client.on('error', (error) => {
 
 client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot) return;
+    if (!message.content.trim().startsWith(PREFIX)) return;
 
     const isAdmin = message.member?.permissions.has(
         PermissionsBitField.Flags.Administrator
     );
     const [command] = message.content.trim().split(/\s+/);
     const commandName = command?.toLowerCase();
-    const comandosJogos = ['!apostar', '!crash', '!altobaixo'];
-    const ehComandoJogo = comandosJogos.some((comandoJogo) =>
-        message.content.trim().toLowerCase().startsWith(comandoJogo),
-    );
+    const comandosJogos = [`${PREFIX}apostar`, `${PREFIX}crash`, `${PREFIX}altobaixo`];
+    const ehComandoJogo = comandosJogos.includes(commandName);
 
     if (ehComandoJogo && message.channel.id !== CANAL_APOSTAS_ID) {
         return message.reply(
@@ -675,20 +675,20 @@ client.on('messageCreate', async (message) => {
         );
     }
 
-    if (commandName === '!saldo') {
+    if (commandName === `${PREFIX}saldo`) {
         const saldo = getSaldo(message.author.id);
         return message.reply(
             `💳 Seu saldo atual na Anbu Shop é de: **${saldo.toLocaleString('pt-BR')} moedas**.`,
         );
     }
 
-    if (commandName === '!darmoedas') {
+    if (commandName === `${PREFIX}darmoedas`) {
         if (!isAdmin) return message.reply('❌ Você não tem permissão para usar este comando.');
 
         const mencao = message.mentions.users.first();
         const quantidade = Number(message.content.trim().split(/\s+/)[2]);
         if (!mencao || !Number.isSafeInteger(quantidade) || quantidade <= 0) {
-            return message.reply('⚠️ Use o formato correto: `!darmoedas @usuario 50000`');
+            return message.reply(`⚠️ Use o formato correto: \`${PREFIX}darmoedas @usuario 50000\``);
         }
 
         adicionarMoedas(mencao.id, quantidade);
@@ -697,7 +697,7 @@ client.on('messageCreate', async (message) => {
         );
     }
 
-    if (commandName === '!removermoedas') {
+    if (commandName === `${PREFIX}removermoedas`) {
         if (!isAdmin) {
             return message.reply(
                 '❌ Você não tem permissão de administrador para usar este comando.',
@@ -710,7 +710,7 @@ client.on('messageCreate', async (message) => {
 
         if (!usuario || !Number.isSafeInteger(valor) || valor <= 0) {
             return message.reply(
-                '⚠️ Uso correto: `!removermoedas @usuario [quantidade]`',
+                `⚠️ Uso correto: \`${PREFIX}removermoedas @usuario [quantidade]\``,
             );
         }
 
@@ -732,7 +732,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embedRemove] });
     }
 
-    if (commandName === '!resetarcoins') {
+    if (commandName === `${PREFIX}resetarcoins`) {
         if (!isAdmin) {
             return message.reply(
                 '❌ Você não tem permissão de administrador para usar este comando.',
@@ -756,7 +756,7 @@ client.on('messageCreate', async (message) => {
 
         if (!usuario) {
             return message.reply(
-                '⚠️ Uso correto: `!resetarcoins @usuario` ou `!resetarcoins all`',
+                `⚠️ Uso correto: \`${PREFIX}resetarcoins @usuario\` ou \`${PREFIX}resetarcoins all\``,
             );
         }
 
@@ -772,7 +772,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embedReset] });
     }
 
-    if (commandName === '!daily') {
+    if (commandName === `${PREFIX}daily`) {
         const userId = message.author.id;
         const agora = Date.now();
         const tempoEspera = 24 * 60 * 60 * 1000;
@@ -807,7 +807,7 @@ client.on('messageCreate', async (message) => {
                     : '🎁 BÔNUS DIÁRIO RESGATADO',
             )
             .setDescription(
-                `Você ganhou **+${recompensa.toLocaleString('pt-BR')} moedas** no seu !daily!` +
+                `Você ganhou **+${recompensa.toLocaleString('pt-BR')} moedas** no seu ${PREFIX}daily!` +
                 (eFimDeSemana
                     ? '\n\n*⚡ O Bônus de Fim de Semana está ATIVO! Prêmios dobrados!*'
                     : '') +
@@ -819,7 +819,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embedDaily] });
     }
 
-    if (commandName === '!pay') {
+    if (commandName === `${PREFIX}pay`) {
         const argumentos = message.content.trim().split(/\s+/);
         const destinatario = message.mentions.users.first();
         const valor = Number(argumentos[2]);
@@ -830,7 +830,7 @@ client.on('messageCreate', async (message) => {
             valor <= 0
         ) {
             return message.reply(
-                '⚠️ Uso incorreto! Use: `!pay @usuario [quantidade]` (Ex: `!pay @amigo 1000`)',
+                `⚠️ Uso incorreto! Use: \`${PREFIX}pay @usuario [quantidade]\` (Ex: \`${PREFIX}pay @amigo 1000\`)`,
             );
         }
 
@@ -875,15 +875,15 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [embedPay] });
     }
 
-    if (commandName === '!apostar') {
+    if (commandName === `${PREFIX}apostar`) {
         console.log(
-            `[COMANDO] !apostar chamado por ${message.author.tag} (${message.author.id}) ` +
+            `[COMANDO] ${PREFIX}apostar chamado por ${message.author.tag} (${message.author.id}) ` +
             `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
         );
         const valorAposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(valorAposta) || valorAposta <= 0) {
             return message.reply(
-                '⚠️ Digite um valor inteiro válido para apostar! Ex: `!apostar 1000`',
+                `⚠️ Digite um valor inteiro válido para apostar! Ex: \`${PREFIX}apostar 1000\``,
             );
         }
 
@@ -1000,14 +1000,14 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    if (commandName === '!altobaixo') {
+    if (commandName === `${PREFIX}altobaixo`) {
         console.log(
-            `[COMANDO] !altobaixo chamado por ${message.author.tag} (${message.author.id}) ` +
+            `[COMANDO] ${PREFIX}altobaixo chamado por ${message.author.tag} (${message.author.id}) ` +
             `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
         );
         const aposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(aposta) || aposta <= 0) {
-            return message.reply('⚠️ Use: `!altobaixo [valor]`');
+            return message.reply(`⚠️ Use: \`${PREFIX}altobaixo [valor]\``);
         }
 
         if (getSaldo(message.author.id) < aposta) {
@@ -1048,12 +1048,18 @@ client.on('messageCreate', async (message) => {
 
         let finalizado = false;
         const collector = msgJogo.createMessageComponentCollector({
-            filter: (interaction) => interaction.user.id === message.author.id,
             time: 20000,
             max: 1,
         });
 
         collector.on('collect', async (interaction) => {
+            if (interaction.user.id !== message.author.id) {
+                return interaction.reply({
+                    content: '❌ Essa aposta não é sua! Abra seu próprio jogo usando o comando no chat.',
+                    ephemeral: true,
+                });
+            }
+
             finalizado = true;
             const numeroSorteado = Math.floor(Math.random() * 10) + 1;
             const escolheuMaior = interaction.customId.startsWith(`hl_maior_${idJogo}`);
@@ -1100,14 +1106,14 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    if (commandName === '!crash') {
+    if (commandName === `${PREFIX}crash`) {
         console.log(
-            `[COMANDO] !crash chamado por ${message.author.tag} (${message.author.id}) ` +
+            `[COMANDO] ${PREFIX}crash chamado por ${message.author.tag} (${message.author.id}) ` +
             `no canal #${message.channel.name || message.channel.id}: ${message.content}`,
         );
         const aposta = Number(message.content.trim().split(/\s+/)[1]);
         if (!Number.isSafeInteger(aposta) || aposta <= 0) {
-            return message.reply('⚠️ Use: `!crash [valor]`');
+            return message.reply(`⚠️ Use: \`${PREFIX}crash [valor]\``);
         }
 
         if (getSaldo(message.author.id) < aposta) {
@@ -1146,7 +1152,6 @@ client.on('messageCreate', async (message) => {
         }
 
         const collector = msgJogo.createMessageComponentCollector({
-            filter: (interaction) => interaction.user.id === message.author.id,
             time: 10000,
             max: 1,
         });
@@ -1190,6 +1195,13 @@ client.on('messageCreate', async (message) => {
         collector.on('collect', async (interaction) => {
             if (finalizado) return;
 
+            if (interaction.user.id !== message.author.id) {
+                return interaction.reply({
+                    content: '❌ Essa aposta não é sua! Abra seu próprio jogo usando o comando no chat.',
+                    ephemeral: true,
+                });
+            }
+
             finalizado = true;
             clearInterval(intervalo);
             const lucroFinal = Math.floor(aposta * multiplicador);
@@ -1217,12 +1229,12 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    if (commandName === '!setpix') {
+    if (commandName === `${PREFIX}setpix`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
-        const novaPix = message.content.slice('!setpix'.length).trim();
+        const novaPix = message.content.slice(`${PREFIX}setpix`.length).trim();
         if (!novaPix) {
-            return message.reply('⚠️ Uso: `!setpix <chave_pix>`');
+            return message.reply(`⚠️ Uso: \`${PREFIX}setpix <chave_pix>\``);
         }
 
         config.chavePix = novaPix;
@@ -1230,16 +1242,16 @@ client.on('messageCreate', async (message) => {
         return message.reply('✅ Chave PIX atualizada com sucesso.');
     }
 
-    if (commandName === '!addproduto') {
+    if (commandName === `${PREFIX}addproduto`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
-        const conteudo = message.content.slice('!addproduto'.length).trim();
+        const conteudo = message.content.slice(`${PREFIX}addproduto`.length).trim();
         const partes = conteudo.split('|').map((parte) => parte.trim());
 
         if (partes.length < 3) {
             return message.reply(
                 '⚠️ **Uso correto:**\n' +
-                '`!addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]`'
+                `\`${PREFIX}addproduto Categoria | Nome | Preço | Descrição/Tópicos | [LinkMidia] | [ConteudoEntrega]\``
             );
         }
 
@@ -1261,12 +1273,12 @@ client.on('messageCreate', async (message) => {
         return message.reply(`✅ Produto **${nome}** cadastrado com sucesso!`);
     }
 
-    if (commandName === '!delproduto') {
+    if (commandName === `${PREFIX}delproduto`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
-        const nomeOuId = message.content.slice('!delproduto'.length).trim();
+        const nomeOuId = message.content.slice(`${PREFIX}delproduto`.length).trim();
         if (!nomeOuId) {
-            return message.reply('⚠️ Uso: `!delproduto <nome ou ID do produto>`');
+            return message.reply(`⚠️ Uso: \`${PREFIX}delproduto <nome ou ID do produto>\``);
         }
 
         const produtos = carregarProdutos();
@@ -1289,15 +1301,15 @@ client.on('messageCreate', async (message) => {
         );
     }
 
-    if (commandName === '!setestoque') {
+    if (commandName === `${PREFIX}setestoque`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
-        const conteudo = message.content.slice('!setestoque'.length).trim();
+        const conteudo = message.content.slice(`${PREFIX}setestoque`.length).trim();
         const partes = conteudo.split('|').map((parte) => parte.trim());
 
         if (partes.length < 2 || !partes[0] || !partes[1]) {
             return message.reply(
-                '⚠️ Uso: `!setestoque <nome ou ID do produto> | <quantidade ou infinito>`'
+                `⚠️ Uso: \`${PREFIX}setestoque <nome ou ID do produto> | <quantidade ou infinito>\``
             );
         }
 
@@ -1335,10 +1347,10 @@ client.on('messageCreate', async (message) => {
         );
     }
 
-    if (commandName === '!enviarproduto') {
+    if (commandName === `${PREFIX}enviarproduto`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
-        const nomeOuId = message.content.slice('!enviarproduto'.length).trim();
+        const nomeOuId = message.content.slice(`${PREFIX}enviarproduto`.length).trim();
         const produtos = carregarProdutos();
         const produto = produtos.find(
             (item) =>
@@ -1392,7 +1404,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    if (commandName === '!listarprodutos') {
+    if (commandName === `${PREFIX}listarprodutos`) {
         if (!isAdmin) return message.reply('❌ Apenas administradores!');
 
         const produtos = carregarProdutos();
