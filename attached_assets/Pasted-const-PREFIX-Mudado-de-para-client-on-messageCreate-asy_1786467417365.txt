@@ -1,0 +1,92 @@
+const PREFIX = '~'; // Mudado de '!' para '~'
+
+client.on('messageCreate', async (message) => {
+  // Ignora bots e mensagens que não começam com ~
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+
+  // Trava para rodar minigames apenas no canal correto
+  const CANAL_APOSTAS_ID = 'SEU_ID_DO_CANAL_APOSTAS';
+  if (message.channel.id !== CANAL_APOSTAS_ID && message.content.startsWith(`${PREFIX}daily`) === false) {
+    return;
+  }
+
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  // ==================== COMANDO: ~saldo ====================
+  if (command === 'saldo') {
+    const saldo = pegarSaldo(message.author.id);
+
+    // Responde apenas para quem usou o comando de forma privada (ephemeral/temporária ou com menção direta)
+    return message.reply({
+      content: `💰 **| ${message.author}**, seu saldo atual é de **${saldo.toLocaleString()} Anbu Coins**.`
+    });
+  }
+
+  // ==================== COMANDO: ~altobaixo ====================
+  if (command === 'altobaixo') {
+    const aposta = parseInt(args[0]);
+    if (isNaN(aposta) || aposta <= 0) {
+      return message.reply('❌ Digite um valor válido para apostar! Exemplo: `~altobaixo 100`');
+    }
+
+    const saldoAtual = pegarSaldo(message.author.id);
+    if (saldoAtual < aposta) {
+      return message.reply('❌ Você não tem Anbu Coins suficientes para essa aposta!');
+    }
+
+    const embedJogo = new EmbedBuilder()
+      .setTitle('🎲 Jogo Alto ou Baixo')
+      .setDescription(`Aposta de **${aposta} Coins** por ${message.author}\nA próxima carta será maior ou menor que **7**?`)
+      .setColor('#f39c12');
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`ab_maior_${message.author.id}_${aposta}`).setLabel('Maior (⬆️)').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(`ab_menor_${message.author.id}_${aposta}`).setLabel('Menor (⬇️)').setStyle(ButtonStyle.Danger)
+    );
+
+    return message.channel.send({ embeds: [embedJogo], components: [row] });
+  }
+
+  // ==================== COMANDO: ~crash ====================
+  if (command === 'crash') {
+    const aposta = parseInt(args[0]);
+    if (isNaN(aposta) || aposta <= 0) {
+      return message.reply('❌ Digite um valor válido! Exemplo: `~crash 100`');
+    }
+
+    // Trava para garantir que apenas o autor interaja no Crash
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`crash_parar_${message.author.id}_${aposta}`).setLabel('Parar / Retirar (🚀)').setStyle(ButtonStyle.Primary)
+    );
+
+    return message.channel.send({
+      content: `🚀 **Crash de ${message.author}** | Aposta: **${aposta} Coins**`,
+      components: [row]
+    });
+  }
+});
+
+// =========================================================================
+// TRAVA DE SEGURANÇA NOS BOTÕES (Impede outros jogadores de clicarem)
+// =========================================================================
+client.on('interactionCreate', async (interaction) => {
+  if (!interaction.isButton()) return;
+
+  const [prefixo, acao, donoId, valorAposta] = interaction.customId.split('_');
+
+  // Trava dos botões de Alto/Baixo e Crash
+  if (prefixo === 'ab' || prefixo === 'crash') {
+    // Se quem clicou no botão NÃO for o dono da aposta:
+    if (interaction.user.id !== donoId) {
+      return interaction.reply({
+        content: '❌ Essa aposta não é sua! Abra seu próprio jogo digitando o comando no chat.',
+        ephemeral: true // Mensagem invisível para os outros
+      });
+    }
+
+    // Processamento do clique do dono correto...
+    await interaction.deferUpdate();
+    // Lógica do resultado da aposta aqui...
+  }
+});

@@ -1,0 +1,12 @@
+{
+  "CONVITE10": {
+    "descontoPorcentagem": 10
+  },
+  "BEMVINDO5": {
+    "descontoPorcentagem": 5
+  },
+  "FREECUPONS": {
+    "descontoPorcentagem": 5,
+    "expiraEm": 1786763060392
+  }
+}

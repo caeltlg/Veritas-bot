@@ -37,7 +37,6 @@ const CANAL_RANKING_ID = '1536179623447105536';
 const CARGO_VIP_ID = '1536067928464826368';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
-const PRECO_MINIMO_CUPOM = 7;
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -63,10 +62,37 @@ const client = new Client({
 
 const DB_FILE = './produtos.json';
 const ARQUIVO_MOEDAS = './moedas.json';
+const ARQUIVO_CUPONS = './cupons.json';
+const PRECO_MINIMO_CUPOM = 7.5;
 const cuponsValidos = new Map([
     ['CONVITE10', { descontoPorcentagem: 10 }],
     ['BEMVINDO5', { descontoPorcentagem: 5 }],
 ]);
+if (fs.existsSync(ARQUIVO_CUPONS)) {
+    try {
+        const cuponsSalvos = JSON.parse(fs.readFileSync(ARQUIVO_CUPONS, 'utf8'));
+        if (cuponsSalvos && typeof cuponsSalvos === 'object') {
+            for (const [codigo, dados] of Object.entries(cuponsSalvos)) {
+                const descontoPorcentagem = Number(
+                    dados?.descontoPorcentagem ?? dados?.desconto,
+                );
+                const expiraEm = Number(dados?.expiraEm);
+                if (
+                    Number.isSafeInteger(descontoPorcentagem) &&
+                    descontoPorcentagem > 0 &&
+                    descontoPorcentagem <= 100
+                ) {
+                    cuponsValidos.set(codigo.toUpperCase(), {
+                        descontoPorcentagem,
+                        ...(Number.isFinite(expiraEm) ? { expiraEm } : {}),
+                    });
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Não foi possível carregar cupons.json:', error.message);
+    }
+}
 const blacklist = new Set();
 const estatisticasCompradores = new Map();
 const cuponsAplicados = new Map();
@@ -179,6 +205,11 @@ function formatarValor(valor) {
 
 function chaveCupom(interaction) {
     return `${interaction.channelId}:${interaction.user.id}`;
+}
+
+function salvarCupons() {
+    const dados = Object.fromEntries(cuponsValidos.entries());
+    fs.writeFileSync(ARQUIVO_CUPONS, `${JSON.stringify(dados, null, 2)}\n`);
 }
 
 function calcularPrecoComCupom(precoOriginal, porcentagemDesconto) {
@@ -471,6 +502,32 @@ const slashCommands = [
             option
                 .setName('descricao')
                 .setDescription('Descrição do pacote')
+                .setRequired(true)
+        ),
+    new SlashCommandBuilder()
+        .setName('criarcupom')
+        .setDescription('Cria um cupom de desconto temporário para a loja')
+        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
+        .addStringOption((option) =>
+            option
+                .setName('codigo')
+                .setDescription('Código do cupom (Ex: FREECUPONS)')
+                .setRequired(true)
+        )
+        .addIntegerOption((option) =>
+            option
+                .setName('desconto')
+                .setDescription('Porcentagem de desconto (Ex: 5 para 5%)')
+                .setMinValue(1)
+                .setMaxValue(100)
+                .setRequired(true)
+        )
+        .addIntegerOption((option) =>
+            option
+                .setName('dias')
+                .setDescription('Validade em dias (Ex: 5)')
+                .setMinValue(1)
+                .setMaxValue(3650)
                 .setRequired(true)
         ),
     new SlashCommandBuilder()
@@ -1408,6 +1465,13 @@ client.on('interactionCreate', async (interaction) => {
             });
         }
 
+        if (cupom.expiraEm && Date.now() > cupom.expiraEm) {
+            return interaction.reply({
+                content: '⏰ Este cupom já expirou!',
+                ephemeral: true,
+            });
+        }
+
         const produto = await obterProdutoDoCarrinho(interaction.channel);
         if (!produto) {
             return interaction.reply({
@@ -1420,7 +1484,7 @@ client.on('interactionCreate', async (interaction) => {
         if (precoOriginal <= PRECO_MINIMO_CUPOM) {
             return interaction.reply({
                 content:
-                    '⚠️ Cupons de desconto não podem ser aplicados em produtos de R$ 7,00 ou menos.',
+                    '⚠️ Cupons de desconto não podem ser aplicados em produtos de R$ 7,50 ou menos.',
                 ephemeral: true,
             });
         }
@@ -1441,7 +1505,7 @@ client.on('interactionCreate', async (interaction) => {
                 PRECO_MINIMO_CUPOM;
         return interaction.reply({
             content: atingiuValorMinimo
-                ? `🎉 Cupom aplicado! O valor mínimo permitido por produto é **R$ 7,00**. ` +
+                ? `🎉 Cupom aplicado! O valor mínimo permitido por produto é **R$ 7,50**. ` +
                   `Seus ${formatarValor(precoOriginal)} ficaram por **${formatarValor(precoFinal)}**.`
                 : `🎉 Cupom de ${cupom.descontoPorcentagem}% aplicado com sucesso! ` +
                   `De ${formatarValor(precoOriginal)} por **${formatarValor(precoFinal)}**.`,
@@ -1531,6 +1595,54 @@ client.on('interactionCreate', async (interaction) => {
             return interaction.reply(
                 `✅ Pacote de **${quantidadeCoins.toLocaleString('pt-BR')} Coins** cadastrado como **${produto.nome}** por **R$ ${preco.toFixed(2).replace('.', ',')}**.`,
             );
+        }
+
+        if (interaction.commandName === 'criarcupom') {
+            const codigo = interaction.options
+                .getString('codigo', true)
+                .trim()
+                .toUpperCase();
+            const descontoPorcentagem = interaction.options.getInteger('desconto', true);
+            const diasValidade = interaction.options.getInteger('dias', true);
+
+            if (!/^[A-Z0-9_-]{3,32}$/.test(codigo)) {
+                return interaction.reply({
+                    content:
+                        '⚠️ O código deve ter entre 3 e 32 caracteres e usar apenas letras, números, `_` ou `-`.',
+                    ephemeral: true,
+                });
+            }
+
+            const dataExpiracao = new Date();
+            dataExpiracao.setDate(dataExpiracao.getDate() + diasValidade);
+
+            cuponsValidos.set(codigo, {
+                descontoPorcentagem,
+                expiraEm: dataExpiracao.getTime(),
+            });
+            salvarCupons();
+
+            const embedCupom = new EmbedBuilder()
+                .setTitle('🎟️ CUPOM CRIADO COM SUCESSO')
+                .addFields(
+                    { name: '🔑 Código:', value: `\`${codigo}\``, inline: true },
+                    {
+                        name: '📉 Desconto:',
+                        value: `**${descontoPorcentagem}%**`,
+                        inline: true,
+                    },
+                    {
+                        name: '⏳ Validade:',
+                        value:
+                            `**${diasValidade} dias** ` +
+                            `(expira <t:${Math.floor(dataExpiracao.getTime() / 1000)}:R>)`,
+                        inline: false,
+                    },
+                )
+                .setColor('#2ecc71')
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embedCupom] });
         }
 
         if (interaction.commandName === 'delproduto') {
