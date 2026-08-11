@@ -346,5 +346,15 @@
     "media": null,
     "entrega": "Coins creditadas automaticamente após a aprovação do pagamento.",
     "estoque": null
+  },
+  {
+    "id": "prod_1786471509872",
+    "categoria": "contas",
+    "nome": "Account Anbu #02",
+    "preco": "400 estoque:1",
+    "descricao": "📄 **Descrição**\n⚙️ **📘 Nível 67 | Fotos**\n⚙️ **vídeos e prova duo disponíveis após abrir o carrinho!**",
+    "media": null,
+    "entrega": "Entrega enviada via suporte.",
+    "estoque": null
   }
 ]

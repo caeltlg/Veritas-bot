@@ -477,25 +477,39 @@ const slashCommands = [
         ),
     new SlashCommandBuilder()
         .setName('addproduto')
-        .setDescription('Cadastra um produto')
+        .setDescription('Cadastra um produto na loja')
         .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator.toString())
         .addStringOption((option) =>
-            option.setName('categoria').setDescription('Categoria do produto').setRequired(true)
+            option
+                .setName('categoria')
+                .setDescription('Categoria do produto')
+                .setRequired(true)
         )
         .addStringOption((option) =>
-            option.setName('nome').setDescription('Nome do produto').setRequired(true)
+            option
+                .setName('nome')
+                .setDescription('Nome do produto')
+                .setRequired(true)
+        )
+        .addNumberOption((option) =>
+            option
+                .setName('preco')
+                .setDescription('Preço do produto (Ex: 400)')
+                .setMinValue(0)
+                .setRequired(true)
         )
         .addStringOption((option) =>
-            option.setName('preco').setDescription('Preço do produto').setRequired(true)
+            option
+                .setName('descricao')
+                .setDescription('Descrição do produto')
+                .setRequired(true)
         )
-        .addStringOption((option) =>
-            option.setName('descricao').setDescription('Descrição ou tópicos').setRequired(true)
-        )
-        .addStringOption((option) =>
-            option.setName('midia').setDescription('URL de imagem ou vídeo').setRequired(false)
-        )
-        .addStringOption((option) =>
-            option.setName('entrega').setDescription('Conteúdo entregue após aprovação').setRequired(false)
+        .addIntegerOption((option) =>
+            option
+                .setName('estoque')
+                .setDescription('Quantidade em estoque (padrão: 1)')
+                .setMinValue(0)
+                .setRequired(false)
         ),
     new SlashCommandBuilder()
         .setName('addcoin')
@@ -1641,25 +1655,59 @@ client.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.commandName === 'addproduto') {
-            const produto = {
-                id: `prod_${Date.now()}`,
-                categoria: interaction.options.getString('categoria', true),
-                nome: interaction.options.getString('nome', true),
-                preco: interaction.options.getString('preco', true),
-                descricao: interaction.options.getString('descricao', true),
-                media: interaction.options.getString('midia') || null,
-                entrega:
-                    interaction.options.getString('entrega') ||
-                    'Entrega enviada via suporte.',
-                estoque: null,
-            };
+            const categoria = interaction.options.getString('categoria', true).trim();
+            const nome = interaction.options.getString('nome', true).trim();
+            const precoInput = interaction.options.getNumber('preco', true);
+            const descricao = interaction.options.getString('descricao', true).trim();
+            const estoqueInput = interaction.options.getInteger('estoque') ?? 1;
+            const precoLimpo = parseFloat(
+                String(precoInput).replace(/[^\d.,]/g, '').replace(',', '.'),
+            );
+
+            if (!nome || !categoria || !descricao) {
+                return interaction.reply({
+                    content: '❌ Preencha categoria, nome e descrição do produto.',
+                    ephemeral: true,
+                });
+            }
+
+            if (!Number.isFinite(precoLimpo) || precoLimpo < 0) {
+                return interaction.reply({
+                    content: '❌ Informe um preço válido (apenas números, ex: 400)!',
+                    ephemeral: true,
+                });
+            }
+
+            if (!Number.isInteger(estoqueInput) || estoqueInput < 0) {
+                return interaction.reply({
+                    content: '❌ O estoque deve ser um número inteiro maior ou igual a zero.',
+                    ephemeral: true,
+                });
+            }
 
             const produtos = carregarProdutos();
+            const idBase = nome.toLowerCase().replace(/\s+/g, '_');
+            const idExiste = produtos.some((item) => item.id === idBase);
+            const produto = {
+                id: idExiste ? `${idBase}_${Date.now()}` : idBase,
+                categoria,
+                nome,
+                preco: precoLimpo,
+                descricao,
+                media: null,
+                entrega: 'Entrega enviada via suporte.',
+                estoque: estoqueInput,
+            };
+
             produtos.push(produto);
             salvarProdutos(produtos);
-            return interaction.reply(
-                `✅ Produto **${produto.nome}** cadastrado com sucesso!`
-            );
+            return interaction.reply({
+                content:
+                    `✅ Produto **${produto.nome}** cadastrado com sucesso!\n` +
+                    `💰 Preço: **${formatarValor(precoLimpo)}**\n` +
+                    `📦 Estoque: **${estoqueInput}** unidade(s)`,
+                ephemeral: true,
+            });
         }
 
         if (interaction.commandName === 'addcoin') {
