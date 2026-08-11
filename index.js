@@ -38,6 +38,33 @@ const CANAL_RANKING_ID = '1536179623447105536';
 const CARGO_VIP_ID = '1536067928464826368';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
+const auxiliosTroca = {
+    aux_5: {
+        nome: 'Auxílio R$ 5,00',
+        custo: 5000,
+        link: config.auxiliosTroca?.aux_5 || null,
+    },
+    aux_10: {
+        nome: 'Auxílio R$ 10,00',
+        custo: 10000,
+        link: config.auxiliosTroca?.aux_10 || null,
+    },
+    aux_15: {
+        nome: 'Auxílio R$ 15,00',
+        custo: 15000,
+        link: config.auxiliosTroca?.aux_15 || null,
+    },
+    aux_20: {
+        nome: 'Auxílio R$ 20,00',
+        custo: 20000,
+        link: config.auxiliosTroca?.aux_20 || null,
+    },
+    aux_25: {
+        nome: 'Auxílio R$ 25,00',
+        custo: 25000,
+        link: config.auxiliosTroca?.aux_25 || null,
+    },
+};
 
 if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
     throw new Error('DISCORD_TOKEN não configurado.');
@@ -677,9 +704,23 @@ client.on('messageCreate', async (message) => {
 
     if (commandName === `${PREFIX}saldo`) {
         const saldo = getSaldo(message.author.id);
-        return message.reply(
-            `💳 Seu saldo atual na Anbu Shop é de: **${saldo.toLocaleString('pt-BR')} moedas**.`,
-        );
+        if (message.deletable) {
+            await message.delete().catch(() => {});
+        }
+
+        try {
+            await message.author.send(
+                `💰 **| Anbu Shop**: Seu saldo atual é de **${saldo.toLocaleString('pt-BR')} Anbu Coins**.`,
+            );
+        } catch {
+            const aviso = await message.channel.send(
+                `⚠️ ${message.author}, abra sua mensagem direta (PV) para receber seu saldo.`,
+            ).catch(() => null);
+            if (aviso) {
+                setTimeout(() => aviso.delete().catch(() => {}), 5000);
+            }
+        }
+        return;
     }
 
     if (commandName === `${PREFIX}darmoedas`) {
@@ -770,6 +811,57 @@ client.on('messageCreate', async (message) => {
             .setTimestamp();
 
         return message.reply({ embeds: [embedReset] });
+    }
+
+    if (commandName === `${PREFIX}paineltroca`) {
+        if (!isAdmin) {
+            return message.reply('❌ Apenas administradores podem publicar o painel de troca.');
+        }
+
+        const embedTroca = new EmbedBuilder()
+            .setTitle('🔄 TROCA DE COINS POR AUXÍLIO VIP')
+            .setDescription(
+                'Troque suas **Anbu Coins** por links de Auxílios VIP de forma automática!\n\n' +
+                '🔹 **Auxílio R$ 5,00** ➔ 5.000 Coins\n' +
+                '🔹 **Auxílio R$ 10,00** ➔ 10.000 Coins\n' +
+                '🔹 **Auxílio R$ 15,00** ➔ 15.000 Coins\n' +
+                '🔹 **Auxílio R$ 20,00** ➔ 20.000 Coins\n' +
+                '🔹 **Auxílio R$ 25,00** ➔ 25.000 Coins\n\n' +
+                '📩 O link será enviado por mensagem direta após a confirmação.',
+            )
+            .setColor('#9b59b6')
+            .setFooter({ text: 'Mantenha a DM aberta para receber o auxílio.' });
+
+        const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('trocar_aux_5')
+                .setLabel('Resgatar R$ 5 (5k Coins)')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('trocar_aux_10')
+                .setLabel('Resgatar R$ 10 (10k Coins)')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId('trocar_aux_15')
+                .setLabel('Resgatar R$ 15 (15k Coins)')
+                .setStyle(ButtonStyle.Primary),
+        );
+
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('trocar_aux_20')
+                .setLabel('Resgatar R$ 20 (20k Coins)')
+                .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+                .setCustomId('trocar_aux_25')
+                .setLabel('Resgatar R$ 25 (25k Coins)')
+                .setStyle(ButtonStyle.Success),
+        );
+
+        return message.channel.send({
+            embeds: [embedTroca],
+            components: [row1, row2],
+        });
     }
 
     if (commandName === `${PREFIX}daily`) {
@@ -1802,6 +1894,69 @@ client.on('interactionCreate', async (interaction) => {
     }
 
     if (!interaction.isButton()) return;
+
+    if (interaction.customId.startsWith('trocar_')) {
+        const chaveAuxilio = interaction.customId.slice('trocar_'.length);
+        const item = auxiliosTroca[chaveAuxilio];
+
+        if (!item) {
+            return interaction.reply({
+                content: '❌ Este auxílio não está disponível.',
+                ephemeral: true,
+            });
+        }
+
+        if (!item.link) {
+            return interaction.reply({
+                content:
+                    '⚠️ Este auxílio ainda não foi configurado. Fale com a administração.',
+                ephemeral: true,
+            });
+        }
+
+        const saldoAtual = getSaldo(interaction.user.id);
+        if (saldoAtual < item.custo) {
+            return interaction.reply({
+                content:
+                    `❌ **Saldo insuficiente!** Você precisa de **${item.custo.toLocaleString('pt-BR')} Coins** ` +
+                    `e possui **${saldoAtual.toLocaleString('pt-BR')} Coins**.`,
+                ephemeral: true,
+            });
+        }
+
+        removerMoedas(interaction.user.id, item.custo);
+
+        try {
+            await interaction.user.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle('🎉 RESGATE DE COINS REALIZADO COM SUCESSO!')
+                        .setDescription(
+                            `Você trocou **${item.custo.toLocaleString('pt-BR')} Anbu Coins** ` +
+                            `pelo **${item.nome}**.\n\n` +
+                            `🔗 **Link do seu auxílio:**\n${item.link}`,
+                        )
+                        .setColor('#2ecc71')
+                        .setFooter({ text: 'Obrigado por utilizar a Anbu Shop!' }),
+                ],
+            });
+
+            return interaction.reply({
+                content:
+                    `✅ **Troca realizada!** O link do **${item.nome}** foi enviado no seu PV. ` +
+                    'O saldo foi descontado.',
+                ephemeral: true,
+            });
+        } catch {
+            adicionarMoedas(interaction.user.id, item.custo);
+            return interaction.reply({
+                content:
+                    '❌ **Não foi possível enviar o link no PV.** Abra sua DM e tente novamente. ' +
+                    'Suas Coins foram devolvidas.',
+                ephemeral: true,
+            });
+        }
+    }
 
     if (interaction.customId.startsWith('buy_')) {
         const produtoId = interaction.customId.slice('buy_'.length);
