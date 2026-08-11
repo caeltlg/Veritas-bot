@@ -42,22 +42,26 @@ const auxiliosTroca = {
     aux_5: {
         nome: 'VIP FF 24H',
         custo: 15000,
-        link: config.auxiliosTroca?.aux_5 || null,
+        key: 'VIP–FF-24H-X9P2L',
+        link: 'https://blackcore-auxlio.lovable.app/',
     },
     aux_10: {
         nome: 'VIP FF 7 Dias',
         custo: 30000,
-        link: config.auxiliosTroca?.aux_10 || null,
+        key: 'VIP–FF-7D-KL77A',
+        link: 'https://blackcore-auxlio.lovable.app/',
     },
     aux_15: {
         nome: 'VIP FF 30 Dias',
         custo: 50000,
-        link: config.auxiliosTroca?.aux_15 || null,
+        key: 'VIP–FF-30D-9QWE2',
+        link: 'https://blackcore-auxlio.lovable.app/',
     },
     aux_20: {
         nome: 'VIP FF Vitalício',
         custo: 100000,
-        link: config.auxiliosTroca?.aux_20 || null,
+        key: 'VIP–FF-LIFE-77PL',
+        link: 'https://blackcore-auxlio.lovable.app/',
     },
 };
 
@@ -1214,7 +1218,16 @@ client.on('messageCreate', async (message) => {
         removerMoedas(message.author.id, aposta);
 
         let multiplicador = 1;
-        const pontoCrash = Number((Math.random() * (3.5 - 1.1) + 1.1).toFixed(2));
+        const rand = Math.random();
+        let pontoCrash;
+
+        if (rand < 0.25) {
+            pontoCrash = 1.0;
+        } else {
+            pontoCrash = parseFloat((0.99 / (1 - Math.random())).toFixed(2));
+            if (pontoCrash > 10) pontoCrash = 10;
+        }
+
         const idJogo = `${message.author.id}_${Date.now()}`;
         let finalizado = false;
         let intervalo;
@@ -1261,6 +1274,15 @@ client.on('messageCreate', async (message) => {
 
         intervalo = setInterval(async () => {
             if (finalizado) return;
+
+            if (multiplicador >= pontoCrash) {
+                await encerrarComoPerda(
+                    '💥 CRASH! EXPLODIU!',
+                    `O foguete explodiu em **${pontoCrash.toFixed(2)}x**!\nVocê perdeu sua aposta de **${aposta.toLocaleString('pt-BR')} moedas** para a casa.`,
+                );
+                collector.stop('crashed');
+                return;
+            }
 
             multiplicador = Number((multiplicador + 0.25).toFixed(2));
             if (multiplicador >= pontoCrash) {
@@ -1967,7 +1989,8 @@ client.on('interactionCreate', async (interaction) => {
                         .setDescription(
                             `Você trocou **${item.custo.toLocaleString('pt-BR')} Anbu Coins** ` +
                             `pelo **${item.nome}**.\n\n` +
-                            `🔗 **Link do seu auxílio:**\n${item.link}`,
+                            `🔑 **Sua Key de Acesso:**\n\`\`\`${item.key}\`\`\`\n` +
+                            `🔗 **Painel para Resgate:**\n${item.link}`,
                         )
                         .setColor('#2ecc71')
                         .setFooter({ text: 'Obrigado por utilizar a Anbu Shop!' }),

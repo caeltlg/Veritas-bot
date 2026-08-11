@@ -356,5 +356,45 @@
     "media": null,
     "entrega": "Entrega enviada via suporte.",
     "estoque": null
+  },
+  {
+    "id": "account_anbu_#099",
+    "categoria": "conta",
+    "nome": "Account Anbu #099",
+    "preco": 400,
+    "descricao": "u3",
+    "media": null,
+    "entrega": "Entrega enviada via suporte.",
+    "estoque": 1
+  },
+  {
+    "id": "account_anbu_#002",
+    "categoria": "conta",
+    "nome": "Account Anbu #002",
+    "preco": 400,
+    "descricao": "⚙️ 📘 Nível 67 | Fotos, vídeos e prova duo disponíveis após abrir o carrinho!",
+    "media": null,
+    "entrega": "Entrega enviada via suporte.",
+    "estoque": 1
+  },
+  {
+    "id": "account_anbu_#02",
+    "categoria": "Contas",
+    "nome": "Account Anbu #02",
+    "preco": 400,
+    "descricao": "📘 Informações da conta, vídeos, fotos e prova duo disponíveis após abrir o carrinho!",
+    "media": null,
+    "entrega": "Entrega enviada via suporte.",
+    "estoque": 1
+  },
+  {
+    "id": "acount_anbu_#02",
+    "categoria": "Contas",
+    "nome": "Acount Anbu #02",
+    "preco": 400,
+    "descricao": "📘 Informações da conta, vídeos, fotos e prova duo disponíveis após abrir o carrinho!",
+    "media": null,
+    "entrega": "Entrega enviada via suporte.",
+    "estoque": 1
   }
 ]
