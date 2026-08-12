@@ -28,7 +28,7 @@ process.on('unhandledRejection', (error) => {
 
 const discordToken = process.env.DISCORD_TOKEN || config.token;
 const app = express();
-const HTTP_PORT = 3000;
+const HTTP_PORT = process.env.PORT || 8080;
 const PREFIX = '~';
 const CANAL_STATUS_ID = '1536057245958275094';
 const CANAL_VENDAS_ID = '1536059223211769926';
