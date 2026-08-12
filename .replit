@@ -16,11 +16,12 @@ name = "VeritasBot"
 author = "agent"
 
 [workflows.workflow.metadata]
-outputType = "console"
+outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "node index.js"
+args = "PORT=3000 node index.js"
+waitForPort = 3000
 
 [[workflows.workflow]]
 name = "artifacts/api-server: API Server"
