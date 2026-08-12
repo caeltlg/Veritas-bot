@@ -70,7 +70,7 @@ if (!discordToken || discordToken === 'SEU_NOVO_TOKEN_AQUI') {
 }
 
 app.get('/', (_req, res) => {
-    res.status(200).send('Bot Veritas está rodando perfeitamente!');
+    res.status(200).send('OK');
 });
 
 const httpServer = app.listen(HTTP_PORT, () => {
