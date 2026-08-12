@@ -35,7 +35,7 @@ const CANAL_VENDAS_ID = '1536059223211769926';
 const CANAL_TOP_COMPRADORES_ID = '1536064461469777961';
 const CANAL_APOSTAS_ID = '1536179345364619304';
 const CANAL_RANKING_ID = '1536179623447105536';
-const CARGO_VIP_ID = '1536067928464826368';
+const CARGO_VIP_ID = '1486069161493790740';
 const CARGO_APRENDIZ_ID = '1536068104004698295';
 const CARGO_VIP_RUBI_ID = '1536090550933917727';
 const auxiliosTroca = {
@@ -90,6 +90,8 @@ const client = new Client({
 const DB_FILE = './produtos.json';
 const ARQUIVO_MOEDAS = './moedas.json';
 const ARQUIVO_CUPONS = './cupons.json';
+const ARQUIVO_COMPRADORES = './compradores.json';
+const ARQUIVO_RANKING = './ranking.json';
 const PRECO_MINIMO_CUPOM = 7.5;
 const cuponsValidos = new Map([
     ['CONVITE10', { descontoPorcentagem: 10 }],
@@ -131,6 +133,79 @@ const CASA_ID = '__casa__';
 let carteiras = {};
 let rankingUpdateTimer = null;
 let rankingUpdateQueued = false;
+let atualizacaoTopCompradores = Promise.resolve();
+let mensagemTopCompradoresId = null;
+
+if (fs.existsSync(ARQUIVO_RANKING)) {
+    try {
+        const dadosRanking = JSON.parse(fs.readFileSync(ARQUIVO_RANKING, 'utf8'));
+        mensagemTopCompradoresId = dadosRanking?.mensagemId || null;
+    } catch (error) {
+        console.error('Não foi possível carregar ranking.json:', error.message);
+    }
+}
+
+function normalizarValorMonetario(valor) {
+    if (typeof valor === 'number') {
+        return Number.isFinite(valor) ? Math.round(valor * 100) / 100 : NaN;
+    }
+
+    if (typeof valor === 'object' && valor !== null) {
+        return normalizarValorMonetario(
+            valor.totalGasto ?? valor.total ?? valor.valor ?? valor.gasto,
+        );
+    }
+
+    const texto = String(valor ?? '').trim();
+    if (!texto) return NaN;
+
+    const valorNumericoNormalizado = valorNumerico(texto);
+    return Number.isFinite(valorNumericoNormalizado)
+        ? Math.round(valorNumericoNormalizado * 100) / 100
+        : NaN;
+}
+
+function carregarEstatisticasCompradores() {
+    if (!fs.existsSync(ARQUIVO_COMPRADORES)) return;
+
+    try {
+        const dados = JSON.parse(fs.readFileSync(ARQUIVO_COMPRADORES, 'utf8'));
+        if (!dados || typeof dados !== 'object') return;
+
+        const registros = Array.isArray(dados)
+            ? dados.map((registro) => [
+                registro?.userId ?? registro?.id,
+                registro?.totalGasto ?? registro?.total ?? registro?.valor,
+            ])
+            : Object.entries(dados).map(([userId, totalGasto]) => [
+                totalGasto?.userId ?? userId,
+                totalGasto?.totalGasto ?? totalGasto?.total ?? totalGasto,
+            ]);
+
+        for (const [userId, totalGasto] of registros) {
+            const id = String(userId || '').trim();
+            const valor = normalizarValorMonetario(totalGasto);
+            if (id && Number.isFinite(valor) && valor >= 0) {
+                estatisticasCompradores.set(id, valor);
+            }
+        }
+    } catch (error) {
+        console.error('Não foi possível carregar compradores.json:', error.message);
+    }
+}
+
+function salvarEstatisticasCompradores() {
+    const dados = Object.fromEntries(
+        Array.from(estatisticasCompradores.entries()).filter(([, totalGasto]) =>
+            Number.isFinite(Number(totalGasto)) && Number(totalGasto) >= 0,
+        ),
+    );
+    const arquivoTemporario = `${ARQUIVO_COMPRADORES}.tmp`;
+    fs.writeFileSync(arquivoTemporario, `${JSON.stringify(dados, null, 2)}\n`);
+    fs.renameSync(arquivoTemporario, ARQUIVO_COMPRADORES);
+}
+
+carregarEstatisticasCompradores();
 
 if (fs.existsSync(ARQUIVO_MOEDAS)) {
     try {
@@ -339,14 +414,64 @@ function solicitarAtualizacaoRanking() {
 
 async function atualizarRanking(guild) {
     const canalTop = await guild.channels.fetch(CANAL_TOP_COMPRADORES_ID).catch(() => null);
-    if (canalTop?.isTextBased()) {
-        const ranking = Array.from(estatisticasCompradores.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([userId, totalGasto]) => ({ userId, totalGasto }));
+    if (!canalTop?.isTextBased()) return;
 
-        await canalTop.send({ embeds: [await gerarEmbedTopCompradores(guild, ranking)] });
+    const ranking = Array.from(estatisticasCompradores.entries())
+        .map(([userId, totalGasto]) => ({
+            userId,
+            totalGasto: normalizarValorMonetario(totalGasto),
+        }))
+        .filter((item) => Number.isFinite(item.totalGasto) && item.totalGasto >= 0)
+        .sort((a, b) =>
+            b.totalGasto - a.totalGasto || a.userId.localeCompare(b.userId),
+        )
+        .slice(0, 5);
+
+    const embedRanking = await gerarEmbedTopCompradores(guild, ranking);
+    let mensagemRanking = null;
+
+    if (mensagemTopCompradoresId) {
+        mensagemRanking = await canalTop.messages
+            .fetch(mensagemTopCompradoresId)
+            .catch(() => null);
     }
+
+    if (!mensagemRanking) {
+        const mensagens = await canalTop.messages.fetch({ limit: 100 }).catch(() => null);
+        mensagemRanking = mensagens?.find(
+            (mensagem) =>
+                mensagem.author.id === client.user?.id &&
+                mensagem.embeds.some(
+                    (embed) => embed.title === '🏆 RANKING - TOP COMPRADORES ANBU SHOP',
+                ),
+        );
+    }
+
+    if (mensagemRanking) {
+        await mensagemRanking.edit({ embeds: [embedRanking] });
+    } else {
+        mensagemRanking = await canalTop.send({ embeds: [embedRanking] });
+    }
+
+    mensagemTopCompradoresId = mensagemRanking.id;
+    const arquivoTemporario = `${ARQUIVO_RANKING}.tmp`;
+    fs.writeFileSync(
+        arquivoTemporario,
+        `${JSON.stringify({ mensagemId: mensagemTopCompradoresId }, null, 2)}\n`,
+    );
+    fs.renameSync(arquivoTemporario, ARQUIVO_RANKING);
+}
+
+function solicitarAtualizacaoTopCompradores(guild) {
+    const proximaAtualizacao = atualizacaoTopCompradores
+        .catch(() => {})
+        .then(() => atualizarRanking(guild));
+
+    atualizacaoTopCompradores = proximaAtualizacao.catch((error) => {
+        console.error('Erro na fila de atualização do ranking de compradores:', error.message);
+    });
+
+    return proximaAtualizacao;
 }
 
 async function verificarEConcederVip(guild, userId, totalGasto) {
@@ -373,9 +498,14 @@ async function gerarEmbedTopCompradores(guild, listaCompradores) {
     for (let i = 0; i < listaCompradores.length; i += 1) {
         const item = listaCompradores[i];
         let cargoNome = 'Membro';
+        let nomeMembro = `Usuário ${item.userId}`;
 
         try {
             const membro = await guild.members.fetch(item.userId);
+            nomeMembro = String(membro.displayName || membro.user.username)
+                .replace(/[`*_~|]/g, '')
+                .replace(/\r?\n/g, ' ')
+                .slice(0, 80);
             const maiorCargo = membro.roles.highest;
             if (maiorCargo && maiorCargo.id !== guild.id) {
                 cargoNome = `<@&${maiorCargo.id}>`;
@@ -387,7 +517,7 @@ async function gerarEmbedTopCompradores(guild, listaCompradores) {
         const posicao =
             i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `**#${i + 1}**`;
         linhas.push(
-            `${posicao} <@${item.userId}> | **Cargo:** ${cargoNome}\n` +
+            `${posicao} **${nomeMembro}** (<@${item.userId}>) | **Cargo:** ${cargoNome}\n` +
             `💰 **Total Gasto:** ${formatarValor(item.totalGasto)}`,
         );
     }
@@ -446,26 +576,46 @@ async function aprovarVendaEGerenciarCliente(
     const membro = await guild.members.fetch(clienteId);
     const temVip = membro.roles.cache.has(CARGO_VIP_ID);
     const temAprendiz = membro.roles.cache.has(CARGO_APRENDIZ_ID);
-    const tipo = String(tipoProduto || '').toLowerCase();
+    const tipo = String(tipoProduto || '')
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
 
-    if (tipo === 'mentoria' || tipo === 'ebook') {
-        if (temVip) await membro.roles.remove(CARGO_VIP_ID);
-        if (!temAprendiz) await membro.roles.add(CARGO_APRENDIZ_ID);
-    } else if (tipo === 'auxilio' && !temAprendiz && !temVip) {
+    if (!temVip) {
         await membro.roles.add(CARGO_VIP_ID);
+        console.log(`✅ Cargo VIP ${CARGO_VIP_ID} atribuído para ${membro.user.tag}`);
+    }
+
+    if (
+        (tipo === 'mentoria' || tipo === 'ebook') &&
+        !temAprendiz
+    ) {
+        await membro.roles.add(CARGO_APRENDIZ_ID);
     }
 
     const canalVendas = await guild.channels.fetch(CANAL_VENDAS_ID).catch(() => null);
     if (canalVendas?.isTextBased()) {
         await canalVendas.send(
             `🎉 <@${clienteId}> adquiriu **${nomeProduto}** por **${formatarValor(valorPago)}** na loja! Obrigado pela preferência! 🚀`,
-        );
+        ).catch((error) => {
+            console.error('Não foi possível publicar a venda no canal de vendas:', error.message);
+        });
     }
 
-    const totalGasto = (estatisticasCompradores.get(clienteId) || 0) + valorPago;
+    const valorCompra = valorNumerico(valorPago);
+    if (!Number.isFinite(valorCompra) || valorCompra < 0) {
+        throw new Error(`Valor pago inválido para a venda de ${clienteId}: ${valorPago}`);
+    }
+
+    const totalGasto =
+        normalizarValorMonetario(estatisticasCompradores.get(clienteId) || 0) + valorCompra;
     estatisticasCompradores.set(clienteId, totalGasto);
+    salvarEstatisticasCompradores();
     await verificarEConcederVip(guild, clienteId, totalGasto);
-    await atualizarRanking(guild);
+    await solicitarAtualizacaoTopCompradores(guild).catch((error) => {
+        console.error('Não foi possível atualizar o ranking após a compra:', error.message);
+    });
 }
 
 const slashCommands = [
@@ -2231,6 +2381,31 @@ client.on('interactionCreate', async (interaction) => {
             salvarProdutos(produtos);
         }
 
+        try {
+            await aprovarVendaEGerenciarCliente(
+                interaction.guild,
+                userId,
+                produto.nome,
+                valorPago,
+                produto.categoria,
+            );
+        } catch (error) {
+            console.error('Erro ao atualizar cliente e ranking:', error.message);
+            vendasAprovadas.delete(vendaKey);
+            if (produto.estoque !== null && produto.estoque !== undefined) {
+                produto.estoque += 1;
+                salvarProdutos(produtos);
+            }
+
+            return interaction.reply({
+                content:
+                    '❌ A venda não foi confirmada. Não foi possível concluir a atribuição do cargo VIP ' +
+                    'ou atualizar o ranking. Verifique se o bot possui **Gerenciar Cargos** e se o cargo VIP ' +
+                    'está abaixo do cargo mais alto do bot.',
+                ephemeral: true,
+            });
+        }
+
         if (produtoCoin) {
             adicionarMoedas(userId, quantidadeCoins);
             await atualizarRankingMagnatas(client);
@@ -2312,18 +2487,6 @@ client.on('interactionCreate', async (interaction) => {
                 );
 
             await logChannel.send({ embeds: [embedLog] });
-        }
-
-        try {
-            await aprovarVendaEGerenciarCliente(
-                interaction.guild,
-                userId,
-                produto.nome,
-                valorPago,
-                produto.categoria,
-            );
-        } catch (error) {
-            console.error('Erro ao atualizar cliente e ranking:', error.message);
         }
 
         cuponsAplicados.delete(`${interaction.channelId}:${userId}`);
