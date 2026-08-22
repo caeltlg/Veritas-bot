@@ -2517,4 +2517,4 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-client.login(discordToken);
+client.login(process.env.DISCORD_TOKEN || config.token);
