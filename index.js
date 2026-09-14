@@ -84,9 +84,10 @@ client.on('interactionCreate', async (interaction) => {
   // --- Interceptor rápido: ACK para evitar timeout se o handler demorar ---
   try {
     if (!interaction.deferred && !interaction.replied) {
-      if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit() || interaction.isContextMenu()) {
-        await interaction.deferReply({ ephemeral: true }).catch(() => {});
-      } else if (interaction.isChatInputCommand()) {
+      if (interaction.isButton()) {
+        // Prefer deferUpdate for buttons (edita a mensagem original). If it fails, fallback to deferReply.
+        await interaction.deferUpdate().catch(() => interaction.deferReply({ ephemeral: true }).catch(() => {}));
+      } else if (interaction.isStringSelectMenu() || interaction.isModalSubmit() || interaction.isContextMenu() || interaction.isChatInputCommand()) {
         await interaction.deferReply({ ephemeral: true }).catch(() => {});
       }
     }
@@ -110,7 +111,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // BUTTON: abrir_carrinho
   if (interaction.isButton() && interaction.customId === 'abrir_carrinho') {
-    // already deferred by interceptor
+    // already acked by interceptor
     return safeHandler(interaction, async () => {
       const produtos = carregarProdutos();
       const produto = (client.selecoesUsuario && client.selecoesUsuario.get(interaction.user.id));
@@ -146,7 +147,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // BUTTON: fechar_carrinho
   if (interaction.isButton() && interaction.customId === 'fechar_carrinho') {
-    // already deferred by interceptor
+    // already acked by interceptor
     return safeHandler(interaction, async () => {
       if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         return await interaction.editReply({ content: '❌ Apenas administradores podem fechar este carrinho!', ephemeral: true });
@@ -158,7 +159,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // BUTTON: gerarpix_
   if (interaction.isButton() && interaction.customId.startsWith('gerarpix_')) {
-    // already deferred by interceptor
+    // already acked by interceptor
     return safeHandler(interaction, async () => {
       const pixKey = config.chavePix || process.env.PIX_KEY || 'Chave PIX não configurada';
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixKey)}`;
@@ -169,13 +170,18 @@ client.on('interactionCreate', async (interaction) => {
         .setDescription(`Copie a chave abaixo para realizar o pagamento no seu banco:\n\n\`\`\`${pixKey}\`\`\`\n📌 *Ou escaneie o QR Code abaixo pelo aplicativo do seu banco:*`)
         .setImage(qrCodeUrl);
 
-      await interaction.editReply({ embeds: [embedPix] });
+      // interaction.editReply will edit the deferred reply; if we used deferUpdate as ack, editReply may throw — use try/catch
+      try {
+        await interaction.editReply({ embeds: [embedPix] });
+      } catch (e) {
+        await interaction.followUp({ embeds: [embedPix], ephemeral: true }).catch(() => {});
+      }
     });
   }
 
   // BUTTON: aprovar_
   if (interaction.isButton() && interaction.customId.startsWith('aprovar_')) {
-    // already deferred by interceptor
+    // already acked by interceptor
     return safeHandler(interaction, async () => {
       if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         return await interaction.editReply({ content: '❌ Apenas administradores podem aprovar o pagamento!', ephemeral: true });
@@ -204,7 +210,11 @@ client.on('interactionCreate', async (interaction) => {
         await logChannel.send({ embeds: [embedLog] });
       }
 
-      await interaction.editReply({ content: '✅ Pagamento aprovado, produto liberado e log enviado!', ephemeral: true });
+      try {
+        await interaction.editReply({ content: '✅ Pagamento aprovado, produto liberado e log enviado!', ephemeral: true });
+      } catch (e) {
+        await interaction.followUp({ content: '✅ Pagamento aprovado, produto liberado e log enviado!', ephemeral: true }).catch(() => {});
+      }
     });
   }
 
@@ -228,11 +238,15 @@ client.on('interactionCreate', async (interaction) => {
 
   // Modal submit example: cupom
   if (interaction.isModalSubmit() && interaction.customId === 'modal_cupom_desconto') {
-    // already deferred by interceptor
+    // already acked by interceptor
     return safeHandler(interaction, async () => {
       const codigo = interaction.fields.getTextInputValue('campo_cupom').toUpperCase().trim();
       // You can implement cupom validation here or keep your existing logic
-      await interaction.editReply({ content: `✅ Cupom ${codigo} processado (placeholder).`, ephemeral: true });
+      try {
+        await interaction.editReply({ content: `✅ Cupom ${codigo} processado (placeholder).`, ephemeral: true });
+      } catch (e) {
+        await interaction.followUp({ content: `✅ Cupom ${codigo} processado (placeholder).`, ephemeral: true }).catch(() => {});
+      }
     });
   }
 
