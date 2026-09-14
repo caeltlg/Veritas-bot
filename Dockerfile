@@ -1,15 +1,7 @@
-FROM node:20-alpine
-
+FROM node:18-alpine
 WORKDIR /app
-
-# Install pnpm
-RUN npm install -g pnpm
-
-# Copy all files
+COPY package.json package-lock.json* ./
+RUN npm ci --production || npm install --production
 COPY . .
-
-# Install dependencies
-RUN pnpm install --frozen-lockfile 2>&1 || pnpm install
-
-# Start bot
-CMD ["node", "index.js"]
+ENV NODE_ENV=production
+CMD ["npm", "start"]
