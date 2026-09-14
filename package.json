@@ -1,5 +1,5 @@
-"packageManager": "pnpm@9.0.0",
 {
+  "packageManager": "pnpm@9.0.0",
   "name": "veritas-bot",
   "version": "1.0.0",
   "main": "index.js",
