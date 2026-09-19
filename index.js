@@ -112,6 +112,34 @@ async function responderErro(interaction, erro) {
 }
 
 client.on('interactionCreate', async (interaction) => {
+    try {
+        if (interaction.isStringSelectMenu() && interaction.customId === 'selecionar_produto') {
+            // 1. Avisa o Discord imediatamente para não dar "está pensando..." de erro
+            await interaction.deferReply({ ephemeral: true });
+
+            // 2. Procura o produto
+            const produtos = carregarProdutos();
+            if (!produtos || !Array.isArray(produtos)) {
+                return await interaction.editReply({ content: '❌ Erro ao carregar o arquivo produtos.json. Verifique se o arquivo existe no servidor.' });
+            }
+
+            const produto = produtos.find((p) => String(p.id) === interaction.values[0]);
+
+            if (!produto) {
+                return await interaction.editReply({ content: '❌ Produto não encontrado.' });
+            }
+
+            // 3. Responde com o produto encontrado (usa editReply em vez de reply)
+            await interaction.editReply({ content: `Você selecionou: **${produto.nome || 'Produto'}**` });
+        }
+    } catch (error) {
+        console.error("Erro no interactionCreate:", error);
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: 'Ocorreu um erro ao processar sua solicitação.' }).catch(() => {});
+        }
+    }
+});
+
   try {
     if (interaction.isStringSelectMenu() && interaction.customId === 'selecionar_produto') {
       const produto = carregarProdutos().find((p) => String(p.id) === interaction.values[0]);
