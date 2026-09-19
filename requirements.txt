@@ -1,0 +1,8 @@
+# Este projeto é um bot Node.js, não Python.
+# As dependências devem ser instaladas com npm/pnpm a partir do package.json:
+#   npm install
+#   ou: pnpm install
+#
+# Dependências runtime:
+# discord.js@^14.11.0
+# express@^4.21.2
